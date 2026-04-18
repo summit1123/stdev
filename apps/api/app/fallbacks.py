@@ -134,7 +134,7 @@ def fallback_result(
         scientific_interpretation,
         recommended_mode_id,
     )
-    media = EntryMedia(posterUrl=poster_url, videoModel="sora-2-pro")
+    media = EntryMedia(posterUrl=poster_url, videoModel="storyboard-mix")
 
     return EntryResult(
         entryId=entry_id,

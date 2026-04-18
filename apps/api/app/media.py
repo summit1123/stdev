@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 import textwrap
-import os
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -34,21 +32,8 @@ class MediaComposer:
         )
         if video_path:
             result.media.videoUrl = self._media_url(video_path)
-
-        sora_asset = self._prepare_sora_request(entry_id, result)
-        if sora_asset:
-            if sora_asset.suffix == ".mp4":
-                mixed_sora_path = self._render_video(
-                    entry_id,
-                    result,
-                    image_paths,
-                    source_video=sora_asset,
-                    output_name="sora-video-mixed.mp4",
-                )
-                published_sora_path = mixed_sora_path or sora_asset
-                result.media.soraVideoUrl = self._media_url(published_sora_path)
-            else:
-                result.media.soraRequestUrl = self._media_url(sora_asset)
+        result.media.soraRequestUrl = None
+        result.media.soraVideoUrl = None
         return result
 
     def _render_storyboards(self, entry_id: str, result: EntryResult) -> list[Path]:
@@ -243,109 +228,6 @@ class MediaComposer:
             return float(value)
         except Exception:
             return None
-
-    def _prepare_sora_request(self, entry_id: str, result: EntryResult) -> Path | None:
-        if not self.settings.sora_cli_path.exists():
-            return None
-
-        prompt_path = self.store.abs_media_path(entry_id, "sora-prompt.txt")
-        prompt_path.write_text(result.videoDirector.soraPrompt, encoding="utf-8")
-
-        mode = self.settings.sora_render_mode.strip().lower()
-        if mode not in {"dry_run", "live"}:
-            return None
-
-        if mode == "dry_run":
-            out_path = self.store.abs_media_path(entry_id, "sora-request.json")
-            cmd = [
-                "python3",
-                str(self.settings.sora_cli_path),
-                "create",
-                "--model",
-                self.settings.sora_model,
-                "--prompt-file",
-                str(prompt_path),
-                "--no-augment",
-                "--size",
-                "1280x720",
-                "--seconds",
-                "12",
-                "--dry-run",
-                "--json-out",
-                str(out_path),
-            ]
-            self._run(cmd, timeout=20)
-            return out_path
-
-        create_path = self.store.abs_media_path(entry_id, "sora-create.json")
-        job_path = self.store.abs_media_path(entry_id, "sora-job.json")
-        video_path = self.store.abs_media_path(entry_id, "sora-video.mp4")
-        uv_bin = str(self.settings.uv_bin_path) if self.settings.uv_bin_path.exists() else "uv"
-        create_cmd = [
-            uv_bin,
-            "run",
-            "--with",
-            "openai",
-            "--with",
-            "httpx",
-            "python",
-            str(self.settings.sora_cli_path),
-            "create-and-poll",
-            "--model",
-            self.settings.sora_model,
-            "--prompt-file",
-            str(prompt_path),
-            "--no-augment",
-            "--size",
-            "1280x720",
-            "--seconds",
-            "12",
-            "--download",
-            "--variant",
-            "video",
-            "--out",
-            str(video_path),
-            "--json-out",
-            str(job_path),
-        ]
-        env = os.environ.copy()
-        if self.settings.openai_api_key:
-            env["OPENAI_API_KEY"] = self.settings.openai_api_key
-        env.setdefault("UV_CACHE_DIR", "/tmp/uv-cache")
-        create_path.write_text(
-            json.dumps(
-                {
-                    "status": "queued",
-                    "model": self.settings.sora_model,
-                    "seconds": 12,
-                    "size": "1280x720",
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        try:
-            self._run(create_cmd, env=env, timeout=1800)
-        except Exception as exc:
-            error_payload = {
-                "status": "failed",
-                "model": self.settings.sora_model,
-                "seconds": 12,
-                "size": "1280x720",
-                "error": str(exc),
-            }
-            job_path.write_text(
-                json.dumps(error_payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            return job_path if job_path.exists() else create_path
-
-        if video_path.exists():
-            return video_path
-        if job_path.exists():
-            return job_path
-        return create_path if create_path.exists() else None
 
     def _audio_path(self, entry_id: str) -> Path | None:
         path = self.store.abs_media_path(entry_id, "narration.mp3")

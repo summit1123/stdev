@@ -14,7 +14,7 @@
 1. 일기 이미지 또는 음성 파일을 올립니다.
 2. OpenAI OCR/STT 결과를 확인하고 원문을 바로 고칩니다.
 3. AI가 상황 이미지, 과학 해석, 게임형 콘텐츠, 질문 씨앗, 실험 카드, 설명 음성을 만듭니다.
-4. 시나리오를 바탕으로 12초 분량의 과학 해석 영상을 렌더링합니다.
+4. 시나리오를 바탕으로 24초 분량의 이미지 기반 과학 해석 영상을 렌더링합니다.
 5. 결과를 저장하고, 미션 로그를 남기고, 이전 세션을 다시 엽니다.
 
 ## Product Surface
@@ -34,7 +34,7 @@
 - TTS: `ElevenLabs` 우선, `gpt-4o-mini-tts` 보조
 - STT: `gpt-4o-mini-transcribe`
 - 이미지 생성: `gpt-image-1`
-- 영상 생성: `sora-2-pro`
+- 영상 생성: `ffmpeg` 기반 이미지 시퀀스 믹싱
 - moderation: `omni-moderation-latest`
 
 ## Run
@@ -65,6 +65,19 @@ Hackathon infrastructure is managed as a single Terraform stack under
 - guide: `infra/README.md`
 - import runbook: `infra/service/imports.md`
 - inventory helper: `bash scripts/aws_inventory.sh`
+
+## Deploy
+
+Use `./deploy.sh` when you want one command to:
+
+- build the web app
+- sync the static output to S3
+- optionally redeploy the API
+- optionally run Terraform
+- optionally hit a health check
+
+Start by copying `deploy.env.example` and setting the values you actually
+use in your environment.
 
 ## Git Workflow
 

@@ -38,7 +38,7 @@ PLANNER_SYSTEM_PROMPT = """
 - scienceQuiz는 한 문제짜리 관찰 퀴즈로 만들고, 정답과 설명이 분명해야 한다
 - scientificInterpretation은 관찰 현상, 변수, 가설, 가능한 메커니즘, 측정 아이디어를 분명하게 적는다
 - sceneVisual.prompt는 이미지 생성용 프롬프트다. 텍스트 삽입, 워터마크, 로고를 요구하지 마라
-- videoDirector는 24초 sora-2-pro handoff spec이어야 하며, 장면 관찰 -> 변수 찾기 -> 가설 세우기 -> 첫 기록 -> 재시험 -> 조건 비교 -> 결과 비교 -> 결론 흐름이 보여야 한다
+- videoDirector는 24초 로컬 이미지 기반 설명 영상 spec이어야 하며, 장면 관찰 -> 변수 찾기 -> 가설 세우기 -> 첫 기록 -> 재시험 -> 조건 비교 -> 결과 비교 -> 결론 흐름이 보여야 한다
 - videoDirector.shots[*].visualPrompt는 실제 그림 생성에 바로 써도 될 정도로 구체적이어야 한다
 - under-18 safe, 또렷하고 차분한 톤
 """
@@ -207,11 +207,11 @@ class OpenAIService:
                                     "7. scienceQuiz는 보기 3개 이상, 정답 인덱스, 짧은 해설을 포함한 한 문제 퀴즈다.\n"
                                     "8. sceneCards는 현상 요약, 질문 씨앗, 미니 실험, AI 해설 순서로 작성한다.\n"
                                     "9. gameModes는 observe, experiment, imagine 세 가지를 모두 포함하되, imagine은 창작 감상이 아니라 간단한 모형화 또는 규칙 시뮬레이션 톤으로 쓴다.\n"
-                                    "10. videoDirector는 sora-2-pro용 24초 영상 handoff spec이다.\n"
+                                    "10. videoDirector는 로컬 이미지 기반 24초 설명 영상 spec이다.\n"
                                     "11. videoDirector.scenarioText는 8개 장면을 0-3초, 3-6초, 6-9초, 9-12초, 12-15초, 15-18초, 18-21초, 21-24초 형식의 한국어 시나리오로 쓰고, 흐름은 장면 관찰 -> 변수 찾기 -> 가설 세우기 -> 첫 기록 -> 재시험 -> 조건 비교 -> 결과 비교 -> 오늘의 결론이어야 한다.\n"
                                     "12. videoDirector.shots[*].visualPrompt는 그림일기 스타일의 실제 이미지 생성에 바로 쓸 만큼 구체적이어야 하며, 각 장면의 과학 단계와 핵심 현상(예: 경사, 속도선, 물방울, 그림자 길이, 날개 움직임)이 보이게 써야 한다.\n"
                                     "13. narration.script는 24초 안에 읽힐 만큼 짧고 분명한 한국어 4~5문장이다.\n"
-                                    "14. media.videoModel에는 sora-2-pro를 넣고, URL 필드는 비워 둔다."
+                                    "14. media.videoModel에는 storyboard-mix를 넣고, URL 필드는 비워 둔다."
                                 ),
                             }
                         ],
@@ -221,7 +221,7 @@ class OpenAIService:
             )
             generated = response.output_parsed
             generated.media.posterUrl = poster_url
-            generated.media.videoModel = self.settings.sora_model
+            generated.media.videoModel = "storyboard-mix"
             if not generated.sceneVisual.prompt.strip():
                 raise RuntimeError("Planner returned an empty scene image prompt.")
             if not generated.narration.script.strip():

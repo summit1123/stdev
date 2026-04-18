@@ -489,17 +489,6 @@
   align-items: start;
 }
 
-.result-video-compare {
-  display: grid;
-  gap: 16px;
-}
-
-.result-video-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
 .studio-stage-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1190,10 +1179,6 @@
   background: #fcfaf3;
 }
 
-.result-video-head {
-  padding: 0 2px;
-}
-
 .panel-copy-stack {
   display: grid;
   gap: 8px;
@@ -1280,12 +1265,6 @@
   padding: 14px;
   line-height: 1.65;
   min-height: 72px;
-}
-
-.inline-link-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
 }
 
 .challenge-panel,
@@ -1683,7 +1662,6 @@
   .result-hero-grid,
   .result-story-grid,
   .result-followup-grid,
-  .result-video-grid,
   .studio-stage-grid,
   .workspace-grid,
   .spotlight-grid,
