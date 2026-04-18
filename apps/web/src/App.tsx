@@ -1504,6 +1504,16 @@ function App() {
                           설명 영상 mp4 열기
                         </a>
                       ) : null}
+                      {result.media.soraVideoUrl ? (
+                        <a
+                          className="inline-link"
+                          href={resolveMediaUrl(result.media.soraVideoUrl) ?? undefined}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          실사풍 보조 영상 보기
+                        </a>
+                      ) : null}
                     </section>
                   </div>
                 </>
