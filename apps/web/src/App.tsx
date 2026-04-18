@@ -158,6 +158,7 @@ type EntryResult = {
     soraRequestUrl?: string | null
     soraVideoUrl?: string | null
     storyboardUrls: string[]
+    generatedStoryboardUrls: string[]
   }
   analysisMode: 'openai' | 'fallback'
 }
@@ -167,6 +168,19 @@ type MissionLog = {
   observationData: string
   reflection: string
   createdAt: string
+}
+
+type CardChatKind = 'summary' | 'question' | 'experiment' | 'interpretation'
+
+type CardChatMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+type CardChatModalState = {
+  kind: CardChatKind
+  cardTitle: string
+  cardBody: string
 }
 
 type AppView = 'home' | 'studio'
@@ -211,7 +225,7 @@ const modeOrder: ModeId[] = ['observe', 'experiment', 'imagine']
 const statusMeta: Record<EntryStatus, { label: string; detail: string; progress: number }> = {
   created: {
     label: '파일을 올려 주세요',
-    detail: '일기 이미지를 올리면 바로 OCR로 읽고 수정 가능한 텍스트로 바꿉니다.',
+    detail: '일기 이미지를 올리면 바로 읽은 글로 정리하고, 다음 단계에서 다듬을 수 있습니다.',
     progress: 0,
   },
   text_ready: {
@@ -263,7 +277,7 @@ const statusMeta: Record<EntryStatus, { label: string; detail: string; progress:
 
 const pipelineSteps = [
   { key: 'upload', label: '업로드' },
-  { key: 'ocr', label: 'OCR 확인' },
+  { key: 'ocr', label: '읽기 확인' },
   { key: 'plan', label: '과학 설계' },
   { key: 'image', label: '상황 이미지' },
   { key: 'video', label: '영상 믹싱' },
@@ -295,7 +309,7 @@ const modeCopy: Record<ModeId, GameModeCard> = {
 
 const studioPages: Array<{ id: StudioPage; step: string; title: string; blurb: string }> = [
   { id: 'source', step: '1', title: '업로드', blurb: '일기 파일을 올리고 샘플을 고릅니다.' },
-  { id: 'ocr', step: '2', title: 'OCR 확인', blurb: '읽힌 텍스트를 고치고 중심 모드를 정합니다.' },
+  { id: 'ocr', step: '2', title: '읽기 확인', blurb: '읽힌 문장을 다듬고 어떤 방식으로 탐구할지 정합니다.' },
   { id: 'results', step: '3', title: '결과 보기', blurb: '과학 해석, 이미지, 영상을 확인합니다.' },
   { id: 'library', step: '4', title: '보관함', blurb: '이전 세션을 다시 열고 이어서 봅니다.' },
 ]
@@ -308,6 +322,43 @@ const busyStatuses = new Set<EntryStatus>([
   'rendering_audio',
   'rendering_video',
 ])
+
+const resultCardKinds: CardChatKind[] = ['summary', 'question', 'experiment', 'interpretation']
+
+const cardChatMeta: Record<
+  CardChatKind,
+  {
+    title: string
+    helper: string
+    opening: string
+    prompts: string[]
+  }
+> = {
+  summary: {
+    title: '현상 요약 더 묻기',
+    helper: '오늘 장면을 어떤 과학 현상으로 읽을지 더 짚어봅니다.',
+    opening: '이 카드에서는 오늘 장면을 과학 현상으로 다시 읽는 데 필요한 단서를 같이 고를 수 있어요.',
+    prompts: ['이 장면에서 가장 먼저 봐야 할 변수는 뭐야?', '오늘 장면을 한 문장 과학 질문으로 바꾸면?', '비교해서 보면 좋은 단서는 뭐야?'],
+  },
+  question: {
+    title: '질문 씨앗 다듬기',
+    helper: '질문을 더 또렷하고 관찰 가능하게 바꿉니다.',
+    opening: '이 카드에서는 막연한 궁금증을 비교하고 기록할 수 있는 질문으로 다듬어 볼 수 있어요.',
+    prompts: ['이 질문을 더 또렷하게 바꾸면?', '무엇을 바꾸고 무엇을 기록하면 돼?', '같이 비교하면 좋은 조건은 뭐야?'],
+  },
+  experiment: {
+    title: '미니 실험 이어 묻기',
+    helper: '실제로 바로 해볼 수 있는 안전한 실험 흐름으로 이어집니다.',
+    opening: '이 카드에서는 집이나 교실에서 바로 해볼 수 있게 실험 순서를 더 짧고 분명하게 풀어줄게요.',
+    prompts: ['준비물은 최소로 어떻게 할 수 있어?', '한 번에 하나만 바꾸려면 뭘 고정해야 해?', '기록표는 어떻게 적으면 좋아?'],
+  },
+  interpretation: {
+    title: 'AI 해설 더 쉽게 듣기',
+    helper: '어려운 과학 말을 쉬운 말로 다시 설명합니다.',
+    opening: '이 카드에서는 과학 해설을 쉬운 말로 다시 풀고, 무엇을 다시 보면 좋은지도 같이 알려줄 수 있어요.',
+    prompts: ['이걸 초등학생 말로 다시 설명해줘', '왜 이런 차이가 생긴다고 볼 수 있어?', '눈으로 확인할 수 있는 단서는 뭐야?'],
+  },
+}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, init)
@@ -347,6 +398,7 @@ function mediaSignature(result?: EntryResult | null): string {
     thumbnailUrl: result.media.thumbnailUrl ?? '',
     sceneImageUrl: result.sceneVisual.imageUrl ?? '',
     storyboardUrls: result.media.storyboardUrls ?? [],
+    generatedStoryboardUrls: result.media.generatedStoryboardUrls ?? [],
     duration: result.videoDirector.targetDurationSeconds ?? 0,
   })
 }
@@ -411,6 +463,10 @@ function App() {
   const [quizChoice, setQuizChoice] = useState<number | null>(null)
   const [quizSubmitted, setQuizSubmitted] = useState(false)
   const [gameStepIndex, setGameStepIndex] = useState(0)
+  const [activeCardChat, setActiveCardChat] = useState<CardChatModalState | null>(null)
+  const [cardChatHistory, setCardChatHistory] = useState<CardChatMessage[]>([])
+  const [cardChatInput, setCardChatInput] = useState('')
+  const [isCardChatLoading, setIsCardChatLoading] = useState(false)
   const [message, setMessage] = useState('일기의 장면을 과학 질문, 게임, 영상으로 연결할 준비가 됐어요.')
   const [error, setError] = useState<string | null>(null)
   const [activeStudioPage, setActiveStudioPage] = useState<StudioPage>(getStudioPageFromHash)
@@ -437,7 +493,10 @@ function App() {
     [assetVersion, result?.sceneVisual.imageUrl],
   )
 
-  const sceneImage = useMemo(() => sceneVisualUrl || currentPoster, [currentPoster, sceneVisualUrl])
+  const generatedStoryboardUrls = useMemo(
+    () => (result?.media.generatedStoryboardUrls ?? []).map((url) => withAssetVersion(resolveMediaUrl(url), assetVersion)).filter(Boolean) as string[],
+    [assetVersion, result?.media.generatedStoryboardUrls],
+  )
 
   const localVideoUrl = useMemo(
     () => withAssetVersion(resolveMediaUrl(result?.media.videoUrl), assetVersion),
@@ -447,7 +506,7 @@ function App() {
     () => withAssetVersion(resolveMediaUrl(result?.media.thumbnailUrl), assetVersion),
     [assetVersion, result?.media.thumbnailUrl],
   )
-  const videoPreviewImage = thumbnailUrl || sceneVisualUrl
+  const videoPreviewImage = thumbnailUrl || generatedStoryboardUrls[0] || sceneVisualUrl
   const videoDurationLabel = `${result?.videoDirector.targetDurationSeconds ?? 24}초`
   const diaryExcerpt = useMemo(
     () => getDiaryExcerpt(transcript || entryStatus?.normalizedText || entryStatus?.rawText || ''),
@@ -485,7 +544,24 @@ function App() {
     setQuizChoice(null)
     setQuizSubmitted(false)
     setGameStepIndex(0)
+    setActiveCardChat(null)
+    setCardChatHistory([])
+    setCardChatInput('')
+    setIsCardChatLoading(false)
   }, [result?.entryId])
+
+  useEffect(() => {
+    if (!activeCardChat) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActiveCardChat(null)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeCardChat])
 
   useEffect(() => {
     const signature = mediaSignature(result)
@@ -629,7 +705,7 @@ function App() {
         hasResult: false,
         missionLogCount: 0,
       })
-      setMessage('OCR을 확인한 다음 바로 생성 버튼을 누르면 됩니다.')
+      setMessage('읽힌 문장을 다듬고 모드를 고르면 바로 결과를 만들 수 있어요.')
       navigateToStudioPage('ocr')
       await refreshEntries()
     } catch (uploadError) {
@@ -741,6 +817,73 @@ function App() {
       return
     }
     setQuizSubmitted(true)
+  }
+
+  function openCardChat(index: number, cardTitle: string, cardBody: string) {
+    const kind = resultCardKinds[index] ?? 'summary'
+    setActiveCardChat({ kind, cardTitle, cardBody })
+    setCardChatInput('')
+    setCardChatHistory([
+      {
+        role: 'assistant',
+        content: '이 카드에 대해 궁금한 점을 바로 물어보세요.',
+      },
+    ])
+  }
+
+  function closeCardChat() {
+    if (isCardChatLoading) {
+      return
+    }
+    setActiveCardChat(null)
+    setCardChatInput('')
+  }
+
+  async function sendCardChatMessage(rawMessage: string) {
+    if (!currentEntryId || !activeCardChat) {
+      return
+    }
+    const trimmedMessage = rawMessage.trim()
+    if (!trimmedMessage) {
+      return
+    }
+
+    const nextUserMessage: CardChatMessage = { role: 'user', content: trimmedMessage }
+    const historyForRequest = cardChatHistory.slice(-6)
+
+    setCardChatHistory((prev) => [...prev, nextUserMessage])
+    setCardChatInput('')
+    setIsCardChatLoading(true)
+
+    try {
+      const response = await api<{ cardKind: CardChatKind; reply: string }>(
+        `/api/v1/entries/${currentEntryId}/cards/chat`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cardKind: activeCardChat.kind,
+            message: trimmedMessage,
+            history: historyForRequest,
+          }),
+        },
+      )
+
+      setCardChatHistory((prev) => [...prev, { role: 'assistant', content: response.reply }])
+    } catch (cardChatError) {
+      setCardChatHistory((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content:
+            cardChatError instanceof Error
+              ? `지금은 답을 불러오지 못했어요. 잠깐 뒤에 다시 물어봐 주세요.\n${cardChatError.message}`
+              : '지금은 답을 불러오지 못했어요. 잠깐 뒤에 다시 물어봐 주세요.',
+        },
+      ])
+    } finally {
+      setIsCardChatLoading(false)
+    }
   }
 
   if (view === 'home') {
@@ -965,7 +1108,7 @@ function App() {
                 >
                   <input ref={fileInputRef} type="file" accept="image/*" onChange={onFileChange} />
                   <strong>{isUploading ? 'AI가 손글씨를 살펴보는 중이에요' : '파일 선택 또는 드래그'}</strong>
-                  <span>손글씨 이미지를 올리면 OCR 결과가 다음 단계에 바로 채워집니다.</span>
+                  <span>손글씨 이미지를 올리면 읽은 문장이 다음 단계에 바로 채워집니다.</span>
                   <div className="upload-actions">
                     <button type="button" className="primary-action" onClick={openFilePicker} disabled={isUploading}>
                       {isUploading ? '생각 중...' : '일기 이미지 올리기'}
@@ -984,7 +1127,7 @@ function App() {
                   </article>
                   <article className="source-tip-card">
                     <strong>과학 해석으로 연결</strong>
-                    <p>OCR 뒤에는 질문, 실험, 퀴즈, 영상이 순서대로 생성됩니다.</p>
+                    <p>읽기 확인 뒤에는 질문, 실험, 퀴즈, 영상이 순서대로 생성됩니다.</p>
                   </article>
                 </div>
 
@@ -1031,8 +1174,8 @@ function App() {
               <section className="composer-section">
                 <div className="section-head compact">
                   <div>
-                    <p className="section-kicker">OCR</p>
-                    <h2>자동 추출된 텍스트를 먼저 확정합니다</h2>
+                    <p className="section-kicker">읽기 확인</p>
+                    <h2>읽은 내용을 다듬고 탐구의 시작점을 정합니다</h2>
                   </div>
                 </div>
                 <textarea
@@ -1053,8 +1196,8 @@ function App() {
                 <section className="content-panel ocr-reference-card">
                   <div className="section-head compact">
                     <div>
-                      <p className="section-kicker">Reference</p>
-                      <h2>원본 일기와 OCR 텍스트를 바로 비교합니다</h2>
+                      <p className="section-kicker">원본 비교</p>
+                      <h2>원본과 읽힌 내용을 함께 보며 맞춥니다</h2>
                     </div>
                   </div>
                   <div className="ocr-reference-layout">
@@ -1070,10 +1213,6 @@ function App() {
                         <p>업로드한 원본 일기가 여기에 나타납니다.</p>
                       </div>
                     )}
-                    <div className="ocr-reference-copy">
-                      <strong>원본 기준</strong>
-                      <p>{diaryExcerpt || '이 아래에서 원본과 OCR 텍스트를 함께 비교할 수 있습니다.'}</p>
-                    </div>
                   </div>
                 </section>
               </section>
@@ -1081,8 +1220,8 @@ function App() {
               <section className="composer-section ocr-side-panel">
                 <div className="section-head compact">
                   <div>
-                    <p className="section-kicker">Mode</p>
-                    <h2>어떤 탐구 톤으로 읽을지 정합니다</h2>
+                    <p className="section-kicker">탐구 모드</p>
+                    <h2>세 가지 읽기 방식 중 하나를 고릅니다</h2>
                   </div>
                 </div>
 
@@ -1103,6 +1242,7 @@ function App() {
                         </div>
                         <p>{mode.hook}</p>
                         <small>{mode.mission}</small>
+                        <span className="mode-card-reward">{mode.reward}</span>
                       </button>
                     )
                   })}
@@ -1112,8 +1252,10 @@ function App() {
 
               <section className="composer-section ocr-action-footer">
                 <div className="ocr-action-copy">
-                  <strong>텍스트를 확정하고 바로 생성합니다</strong>
-                  <span>{isBusy ? '지금 생성이 진행 중입니다.' : '이 단계가 끝나면 결과 화면으로 넘어갑니다.'}</span>
+                  <strong>읽은 내용을 확정하면 바로 다음 결과를 만듭니다</strong>
+                  <span>
+                    {isBusy ? '지금 장면, 질문, 이미지, 영상을 함께 엮는 중이에요.' : '문장을 다듬고 모드를 고르면 바로 결과 화면으로 넘어갑니다.'}
+                  </span>
                 </div>
                 <div className="page-nav-row page-nav-row-inline">
                   <button type="button" className="secondary-action" onClick={() => navigateToStudioPage('source')}>
@@ -1125,7 +1267,7 @@ function App() {
                     disabled={!transcript.trim() || isBusy}
                     onClick={() => void onAnalyzeRequest()}
                   >
-                    {isBusy ? '생성 진행 중' : '결과 만들기'}
+                    {isBusy ? '생성 진행 중' : '탐구 결과 만들기'}
                   </button>
                 </div>
               </section>
@@ -1213,12 +1355,18 @@ function App() {
               {result ? (
                 <>
                   <section className="cards-grid result-card-grid">
-                    {result.sceneCards.map((card) => (
-                      <article key={card.title} className="story-card result-scene-card">
+                    {result.sceneCards.map((card, index) => (
+                      <button
+                        key={card.title}
+                        type="button"
+                        className="story-card result-scene-card result-scene-card-button"
+                        onClick={() => openCardChat(index, card.title, card.body)}
+                      >
                         <p className="section-kicker">Card</p>
                         <strong>{card.title}</strong>
                         <p>{card.body}</p>
-                      </article>
+                        <span className="result-scene-card-cta">눌러서 더 물어보기</span>
+                      </button>
                     ))}
                   </section>
 
@@ -1242,8 +1390,12 @@ function App() {
                         <span>상황 이미지</span>
                         <strong>{result.sceneVisual.title}</strong>
                       </div>
-                      {sceneImage ? (
-                        <img className="spotlight-image" src={sceneImage} alt="일기 상황 재구성 이미지" decoding="async" />
+                      {sceneVisualUrl ? (
+                        <img className="spotlight-image" src={sceneVisualUrl} alt="일기 상황 재구성 이미지" decoding="async" />
+                      ) : isBusy ? (
+                        <div className="media-empty">
+                          <p>상황 이미지를 그리는 중입니다.</p>
+                        </div>
                       ) : (
                         <div className="media-empty">
                           <p>생성된 상황 이미지가 여기에 나타납니다.</p>
@@ -1302,8 +1454,12 @@ function App() {
                       </div>
 
                       <div className="challenge-media">
-                        {sceneImage ? (
-                          <img src={sceneImage} alt="퀴즈 장면" className="challenge-image" decoding="async" />
+                        {sceneVisualUrl ? (
+                          <img src={sceneVisualUrl} alt="퀴즈 장면" className="challenge-image" decoding="async" />
+                        ) : isBusy ? (
+                          <div className="media-empty">
+                            <p>퀴즈용 장면 이미지를 준비하는 중입니다.</p>
+                          </div>
                         ) : (
                           <div className="media-empty">
                             <p>퀴즈용 장면 이미지가 여기에 나타납니다.</p>
@@ -1518,7 +1674,7 @@ function App() {
               ) : (
                 <section className="empty-result">
                   <strong>생성된 결과가 여기에 채워집니다.</strong>
-                  <span>OCR 단계에서 텍스트를 확정하고 생성 버튼을 누르면 이 페이지가 채워집니다.</span>
+                  <span>읽기 확인 단계에서 문장을 다듬고 생성 버튼을 누르면 이 페이지가 채워집니다.</span>
                 </section>
               )}
 
@@ -1578,6 +1734,65 @@ function App() {
           ) : null}
         </section>
       </section>
+
+      {activeCardChat ? (
+        <div className="card-chat-overlay" role="dialog" aria-modal="true" aria-labelledby="card-chat-title">
+          <div className="card-chat-modal">
+            <div className="card-chat-header">
+              <div>
+                <p className="section-kicker">Card Chat</p>
+                <h2 id="card-chat-title">{cardChatMeta[activeCardChat.kind].title}</h2>
+                <p className="card-chat-helper">{cardChatMeta[activeCardChat.kind].helper}</p>
+              </div>
+              <button type="button" className="card-chat-close" onClick={closeCardChat} aria-label="모달 닫기">
+                닫기
+              </button>
+            </div>
+
+            <div className="card-chat-context-inline">
+              <strong>{activeCardChat.cardTitle}</strong>
+              <span>{activeCardChat.cardBody}</span>
+            </div>
+
+            <div className="card-chat-log">
+              {cardChatHistory.map((item, index) => (
+                <div key={`${item.role}-${index}`} className={`card-chat-bubble ${item.role === 'user' ? 'user' : 'assistant'}`}>
+                  <strong>{item.role === 'user' ? '나' : 'kwail'}</strong>
+                  <p>{item.content}</p>
+                </div>
+              ))}
+              {isCardChatLoading ? (
+                <div className="card-chat-bubble assistant loading">
+                  <strong>kwail</strong>
+                  <p>선택한 카드 문맥과 시나리오를 보고 답을 정리하는 중이에요.</p>
+                </div>
+              ) : null}
+            </div>
+
+            <form
+              className="card-chat-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void sendCardChatMessage(cardChatInput)
+              }}
+            >
+              <textarea
+                value={cardChatInput}
+                onChange={(event) => setCardChatInput(event.target.value)}
+                placeholder="이 카드에 대해 더 궁금한 점을 적어 보세요."
+              />
+              <div className="card-chat-actions">
+                <button type="button" className="secondary-action" onClick={closeCardChat} disabled={isCardChatLoading}>
+                  닫기
+                </button>
+                <button type="submit" className="primary-action" disabled={isCardChatLoading || !cardChatInput.trim()}>
+                  질문 보내기
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

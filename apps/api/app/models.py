@@ -64,6 +64,22 @@ class AnalyzeResponse(BaseModel):
     status: EntryStatus
 
 
+class CardChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=1200)
+
+
+class CardChatRequest(BaseModel):
+    cardKind: Literal["summary", "question", "experiment", "interpretation"]
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[CardChatMessage] = Field(default_factory=list)
+
+
+class CardChatResponse(BaseModel):
+    cardKind: Literal["summary", "question", "experiment", "interpretation"]
+    reply: str
+
+
 class ExperimentCard(BaseModel):
     title: str
     hypothesis: str
@@ -99,6 +115,7 @@ class EntryMedia(BaseModel):
     soraRequestUrl: str | None = None
     soraVideoUrl: str | None = None
     storyboardUrls: list[str] = Field(default_factory=list)
+    generatedStoryboardUrls: list[str] = Field(default_factory=list)
 
 
 class GameModeCard(BaseModel):

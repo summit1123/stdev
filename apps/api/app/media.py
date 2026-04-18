@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 import textwrap
@@ -21,15 +22,29 @@ class MediaComposer:
         self.ffprobe_path = self._resolve_binary("ffprobe")
 
     def render(self, entry_id: str, result: EntryResult) -> EntryResult:
-        image_paths = self._render_storyboards(entry_id, result)
+        image_paths, generated_paths = self._render_storyboards(entry_id, result)
         result.media.storyboardUrls = [self._media_url(path) for path in image_paths]
-        if image_paths:
-            result.media.thumbnailUrl = self._media_url(image_paths[0])
+        result.media.generatedStoryboardUrls = [self._media_url(path) for path in generated_paths]
+        if generated_paths:
+            result.media.thumbnailUrl = self._media_url(generated_paths[0])
+        elif result.sceneVisual.imageUrl:
+            result.media.thumbnailUrl = result.sceneVisual.imageUrl
+        else:
+            result.media.thumbnailUrl = None
+
+        audio_path = self._audio_path(entry_id)
+        audio_duration = self._probe_duration(audio_path) if audio_path and audio_path.exists() else None
+        if audio_duration:
+            result.narration.durationSec = round(audio_duration, 2)
+
+        render_duration = self._resolve_render_duration(result, audio_duration)
+        result.videoDirector.targetDurationSeconds = math.ceil(render_duration)
 
         video_path = self._render_video(
             entry_id,
             result,
             image_paths,
+            total_duration=render_duration,
             source_video=None,
         )
         if video_path:
@@ -38,15 +53,33 @@ class MediaComposer:
         result.media.soraVideoUrl = None
         return result
 
-    def _render_storyboards(self, entry_id: str, result: EntryResult) -> list[Path]:
+    def planned_generated_shot_indices(self, result: EntryResult) -> list[int]:
+        shot_count = len(result.videoDirector.shots)
+        if shot_count <= 1:
+            return [0] if shot_count == 1 else []
+        target_count = max(1, (shot_count + 1) // 2)
+        if target_count == 1:
+            return [0]
+        indices = {
+            min(
+                shot_count - 1,
+                round(sample_index * (shot_count - 1) / (target_count - 1)),
+            )
+            for sample_index in range(target_count)
+        }
+        return sorted(indices)
+
+    def _render_storyboards(self, entry_id: str, result: EntryResult) -> tuple[list[Path], list[Path]]:
         poster = self._load_poster(entry_id)
         rendered: list[Path] = []
+        generated: list[Path] = []
         for index, shot in enumerate(result.videoDirector.shots):
             path = self.store.abs_media_path(entry_id, f"storyboard-{index + 1:02d}.png")
             generated_path = self.store.abs_media_path(entry_id, f"generated-storyboard-{index + 1:02d}.png")
             if generated_path.exists():
                 Image.open(generated_path).convert("RGB").save(path)
                 rendered.append(path)
+                generated.append(path)
                 continue
 
             if path.exists() and index < 2:
@@ -56,31 +89,29 @@ class MediaComposer:
             image = self._render_storyboard_slide(entry_id, index, shot, result, poster)
             image.save(path)
             rendered.append(path)
-        return rendered
+        return rendered, generated
 
     def _render_video(
         self,
         entry_id: str,
         result: EntryResult,
         image_paths: list[Path],
+        total_duration: float,
         source_video: Path | None = None,
         output_name: str = "story-video.mp4",
     ) -> Path | None:
         if self.ffmpeg_path is None:
             return None
-        total_duration = self._resolve_video_duration(result, source_video)
 
         if source_video is None:
             if not image_paths:
                 return None
 
             segment_paths: list[Path] = []
-            total_duration = float(result.videoDirector.targetDurationSeconds)
+            segment_durations = self._scaled_shot_durations(result, total_duration, len(image_paths))
             for index, image_path in enumerate(image_paths):
                 segment_path = self.store.abs_media_path(entry_id, f"segment-{index + 1:02d}.mp4")
-                duration_seconds = (
-                    result.videoDirector.shots[index].durationSeconds if index < len(result.videoDirector.shots) else 3
-                )
+                duration_seconds = segment_durations[index]
                 cmd = [
                     str(self.ffmpeg_path),
                     "-y",
@@ -204,6 +235,30 @@ class MediaComposer:
                 return probed
         return float(result.videoDirector.targetDurationSeconds)
 
+    def _resolve_render_duration(self, result: EntryResult, audio_duration: float | None) -> float:
+        base_duration = float(result.videoDirector.targetDurationSeconds)
+        if not audio_duration:
+            return base_duration
+        return max(base_duration, round(audio_duration + 0.35, 2))
+
+    def _scaled_shot_durations(
+        self,
+        result: EntryResult,
+        total_duration: float,
+        image_count: int,
+    ) -> list[float]:
+        base_durations = [
+            float(result.videoDirector.shots[index].durationSeconds if index < len(result.videoDirector.shots) else 3)
+            for index in range(image_count)
+        ]
+        base_total = sum(base_durations) or float(image_count or 1)
+        scale = total_duration / base_total
+        scaled = [round(duration * scale, 2) for duration in base_durations]
+        drift = round(total_duration - sum(scaled), 2)
+        if scaled:
+            scaled[-1] = round(max(0.4, scaled[-1] + drift), 2)
+        return scaled
+
     def _probe_duration(self, path: Path) -> float | None:
         if self.ffprobe_path is None:
             return None
@@ -276,13 +331,16 @@ class MediaComposer:
         result: EntryResult,
         poster: Image.Image | None,
     ) -> Image.Image:
+        frame_number = index + 1
         candidates = [
+            self.store.abs_media_path(entry_id, f"generated-storyboard-{frame_number:02d}.png"),
+            self.store.abs_media_path(entry_id, f"storyboard-{frame_number:02d}.png"),
             self.store.abs_media_path(entry_id, "scene-visual.png"),
+            self.store.abs_media_path(entry_id, "generated-storyboard-01.png"),
+            self.store.abs_media_path(entry_id, "generated-storyboard-02.png"),
             self.store.abs_media_path(entry_id, "storyboard-01.png"),
             self.store.abs_media_path(entry_id, "storyboard-02.png"),
         ]
-        if index >= 1:
-            candidates.insert(0, self.store.abs_media_path(entry_id, f"storyboard-{index:02d}.png"))
         for candidate in candidates:
             if candidate.exists():
                 return Image.open(candidate).convert("RGB")

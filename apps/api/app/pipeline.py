@@ -80,21 +80,16 @@ class AnalysisPipeline:
 
             entry.status = EntryStatus.RENDERING_VIDEO
             self.store.save_entry(entry)
-            # Generate every story beat up front so the final video stays visual
-            # from start to finish instead of falling back to text-heavy slides.
-            for index, shot in enumerate(result.videoDirector.shots[:8], start=1):
-                if index <= 4:
-                    shot_image = self.ai.generate_scene_image(shot.visualPrompt)
-                else:
-                    source_path = self.store.abs_media_path(entry.id, f"generated-storyboard-{index - 1:02d}.png")
-                    shot_image = self.ai.edit_scene_image(source_path, shot.visualPrompt)
-                    if not shot_image:
-                        shot_image = self.ai.generate_scene_image(shot.visualPrompt)
+            # Generate representative keyframes from the full shot plan rather
+            # than hard-coding just the opening beats.
+            for shot_index in self.media.planned_generated_shot_indices(result):
+                shot = result.videoDirector.shots[shot_index]
+                shot_image = self.ai.generate_scene_image(shot.visualPrompt)
                 if shot_image:
                     self.store.save_generated_image(
                         entry.id,
                         shot_image,
-                        filename=f"generated-storyboard-{index:02d}.png",
+                        filename=f"generated-storyboard-{shot_index + 1:02d}.png",
                     )
             result = self.media.render(entry.id, result)
 

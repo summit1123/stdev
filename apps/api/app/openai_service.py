@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import re
 from pathlib import Path
 from urllib.error import HTTPError
@@ -13,7 +14,9 @@ from PIL import Image
 
 from app.config import Settings
 from app.fallbacks import fallback_parse_from_text, fallback_result
-from app.models import DiaryParseOutput, EntryResult, GameModeCard, GeneratedEntryResult
+from app.models import CardChatMessage, DiaryParseOutput, EntryResult, GameModeCard, GeneratedEntryResult
+
+logger = logging.getLogger(__name__)
 
 
 PARSER_SYSTEM_PROMPT = """
@@ -37,9 +40,9 @@ PLANNER_SYSTEM_PROMPT = """
 - scienceGame은 실제로 아이가 바로 해볼 수 있는 규칙 기반 미션으로 작성
 - scienceQuiz는 한 문제짜리 관찰 퀴즈로 만들고, 정답과 설명이 분명해야 한다
 - scientificInterpretation은 관찰 현상, 변수, 가설, 가능한 메커니즘, 측정 아이디어를 분명하게 적는다
-- sceneVisual.prompt는 이미지 생성용 프롬프트다. 텍스트 삽입, 워터마크, 로고를 요구하지 마라
+- sceneVisual.prompt는 이미지 생성용 프롬프트다. 한국 어린이 과학 그림책 같은 2D 일러스트 톤으로 쓰고, 텍스트 삽입, 워터마크, 로고, 실사풍, 포토리얼, 라이브액션, 카메라 사진 구도를 요구하지 마라
 - videoDirector는 24초 로컬 이미지 기반 설명 영상 spec이어야 하며, 장면 관찰 -> 변수 찾기 -> 가설 세우기 -> 첫 기록 -> 재시험 -> 조건 비교 -> 결과 비교 -> 결론 흐름이 보여야 한다
-- videoDirector.shots[*].visualPrompt는 실제 그림 생성에 바로 써도 될 정도로 구체적이어야 한다
+- videoDirector.shots[*].visualPrompt는 실제 그림 생성에 바로 써도 될 정도로 구체적이어야 하며, 각 샷은 같은 그림책 세계관의 일러스트여야 하고 실사풍이나 사진 느낌으로 흐르지 않게 쓴다
 - under-18 safe, 또렷하고 차분한 톤
 """
 
@@ -49,6 +52,9 @@ TTS_INSTRUCTIONS = """
 한 문장마다 짧게 숨을 쉬고, 너무 밝게 튀지 않게 안정적으로 말한다.
 어린이에게 설명하듯 쉽고 또렷하지만 유치하지는 않게 읽는다.
 """
+
+NARRATION_MAX_SENTENCES = 5
+NARRATION_MAX_CHARS = 220
 
 MODE_CARD_COPY = {
     "observe": {
@@ -91,6 +97,77 @@ MODE_CARD_COPY = {
         "video_prompt_hint": "Explorer mindset, make the ordinary feel newly discovered, highlight hidden rules and fresh questions.",
     },
 }
+
+CARD_CHAT_SYSTEM_PROMPTS = {
+    "summary": """
+너는 초등 고학년과 대화하는 과학 탐구 코치다.
+이 카드는 오늘 장면을 짧은 과학 현상으로 다시 읽는 역할이다.
+반드시 지켜라.
+- 한국어로만 답한다.
+- 3문장 안팎으로 짧고 또렷하게 답한다.
+- 심리 진단, 성격 평가, 낙인 표현 금지
+- 보이는 단서와 측정 가능한 변수부터 말한다.
+- 마지막에는 한 줄짜리 다음 관찰 힌트를 덧붙인다.
+""".strip(),
+    "question": """
+너는 질문을 더 또렷하게 다듬는 과학 탐구 코치다.
+이 카드는 질문 씨앗을 관찰 가능한 질문으로 바꾸는 역할이다.
+반드시 지켜라.
+- 한국어로만 답한다.
+- 질문을 더 좋은 형태로 좁혀 준다.
+- 비교할 것, 바꿀 것, 기록할 것을 짚는다.
+- 어린이가 바로 해볼 수 있는 수준으로 말한다.
+""".strip(),
+    "experiment": """
+너는 안전한 미니 실험을 안내하는 과학 코치다.
+이 카드는 집이나 교실에서 바로 해볼 수 있는 짧은 실험으로 이어지는 역할이다.
+반드시 지켜라.
+- 한국어로만 답한다.
+- 3~4문장으로 설명한다.
+- 위험한 도구, 뜨거운 열, 높은 곳, 날카로운 물건은 제안하지 않는다.
+- 한 번에 하나의 변인만 바꾸도록 안내한다.
+""".strip(),
+    "interpretation": """
+너는 어려운 과학 말을 쉬운 말로 풀어 주는 설명 코치다.
+이 카드는 장면을 과학 개념으로 연결해 이해를 돕는 역할이다.
+반드시 지켜라.
+- 한국어로만 답한다.
+- 낯선 용어는 쉬운 말로 풀어 쓴다.
+- 현상 -> 원리 -> 다시 볼 단서 순서로 짧게 설명한다.
+- 정답처럼 단정하지 말고 관찰로 확인할 수 있게 말한다.
+""".strip(),
+}
+
+ILLUSTRATION_STYLE_CLAUSE = (
+    "Premium Korean children's science picture-book illustration, watercolor and colored-pencil texture, "
+    "softly animated storyboard still, hand-drawn characters and backgrounds, no photorealism, no live-action, no camera-photo look"
+)
+
+PHOTO_STYLE_PATTERNS = [
+    r"텍스트\s*삽입\s*없음",
+    r"텍스트\s*아님",
+    r"워터마크\s*없음",
+    r"로고\s*없음",
+    r"실제\s*사진\s*같은\s*구도",
+    r"사진\s*같은\s*구도",
+    r"사진\s*구도\s*느낌\s*없음",
+    r"실사\s*같은\s*구도",
+    r"실제\s*장면",
+    r"실사\s*아님",
+    r"사진풍\s*아님",
+    r"포토리얼(?:리스틱)?\s*아님",
+    r"실사\s*느낌",
+    r"실사풍",
+    r"사실적(?:인)?",
+    r"포토리얼(?:리스틱)?",
+    r"photoreal(?:istic)?",
+    r"photo[\s-]*real(?:istic)?",
+    r"live[\s-]*action",
+    r"camera[\s-]*photo(?:\s*style)?",
+    r"hyper[\s-]*real(?:istic)?",
+    r"ultra[\s-]*real(?:istic)?",
+    r"realistic(?:\s+photo(?:graph(?:ic)?)?)?",
+]
 
 
 class OpenAIService:
@@ -331,6 +408,78 @@ class OpenAIService:
                 return fallback_result(entry_id, text, poster_url, preferred_mode_id)
             raise RuntimeError(f"OpenAI content generation failed: {exc}") from exc
 
+    def answer_card_chat(
+        self,
+        entry_text: str,
+        result: EntryResult,
+        card_kind: str,
+        message: str,
+        history: list[CardChatMessage] | None = None,
+    ) -> str:
+        normalized_kind = card_kind if card_kind in CARD_CHAT_SYSTEM_PROMPTS else "summary"
+        trimmed_message = " ".join(message.split()).strip()
+        recent_history = (history or [])[-6:]
+
+        if self.client and trimmed_message:
+            try:
+                response = self.client.responses.create(
+                    model=self.settings.polish_model,
+                    input=self._build_card_chat_inputs(
+                        entry_text,
+                        result,
+                        normalized_kind,
+                        trimmed_message,
+                        recent_history,
+                    ),
+                )
+                reply = getattr(response, "output_text", "").strip()
+                if reply:
+                    return reply
+                logger.warning("Card chat returned empty output for card_kind=%s", normalized_kind)
+            except Exception as exc:
+                logger.warning("Card chat generation failed for card_kind=%s: %s", normalized_kind, exc)
+
+        return self._fallback_card_chat_reply(result, normalized_kind, trimmed_message)
+
+    def _build_card_chat_inputs(
+        self,
+        entry_text: str,
+        result: EntryResult,
+        card_kind: str,
+        trimmed_message: str,
+        recent_history: list[CardChatMessage],
+    ) -> list[dict[str, object]]:
+        messages: list[dict[str, object]] = [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            f"{CARD_CHAT_SYSTEM_PROMPTS[card_kind]}\n\n"
+                            "[현재 카드 문맥]\n"
+                            f"{self._build_card_chat_context(entry_text, result, card_kind)}"
+                        ),
+                    }
+                ],
+            }
+        ]
+        for item in recent_history:
+            content_type = "output_text" if item.role == "assistant" else "input_text"
+            messages.append(
+                {
+                    "role": item.role,
+                    "content": [{"type": content_type, "text": item.content}],
+                }
+            )
+        messages.append(
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": trimmed_message}],
+            }
+        )
+        return messages
+
     def _infer_science_focus(self, text: str) -> str:
         lowered = text.lower()
         focus_rules = [
@@ -364,6 +513,69 @@ class OpenAIService:
             if any(keyword in lowered for keyword in keywords):
                 return f"{domain}: {hint}"
         return "생활 속 과학: 일기에서 가장 크게 변한 장면을 잡고, 그 현상을 물리·생물·날씨·빛·물질 중 가장 가까운 원리로 설명한다."
+
+    def _build_card_chat_context(self, entry_text: str, result: EntryResult, card_kind: str) -> str:
+        mode_title = MODE_CARD_COPY.get(result.recommendedModeId, MODE_CARD_COPY["observe"])["title"]
+        scene_card_index = {
+            "summary": 0,
+            "question": 1,
+            "experiment": 2,
+            "interpretation": 3,
+        }.get(card_kind, 0)
+        selected_card = result.sceneCards[scene_card_index] if scene_card_index < len(result.sceneCards) else None
+        card_focus = selected_card.body if selected_card else result.summary
+        return (
+            "다음은 현재 카드 대화에 필요한 문맥이다.\n"
+            f"- 모드: {mode_title}\n"
+            f"- 원본 일기: {entry_text}\n"
+            f"- 요약: {result.summary}\n"
+            f"- 선택된 카드 제목: {selected_card.title if selected_card else card_kind}\n"
+            f"- 선택된 카드 본문: {card_focus}\n"
+            f"- 질문 씨앗: {' / '.join(result.questionSeeds[:3])}\n"
+            f"- 실험 제목: {result.experimentCard.title}\n"
+            f"- 독립 변수: {result.experimentCard.independentVariable}\n"
+            f"- 종속 변수: {result.experimentCard.dependentVariable}\n"
+            f"- 실험 방법: {result.experimentCard.method}\n"
+            f"- 과학 해설: {result.scientificInterpretation.explanation}\n"
+            f"- 장면 이미지 설명: {result.sceneVisual.caption}\n"
+            f"- 영상 시나리오: {result.videoDirector.scenarioText}\n"
+            "대화에서는 현재 카드 역할에만 집중해서 답해라."
+        )
+
+    def _fallback_card_chat_reply(self, result: EntryResult, card_kind: str, message: str) -> str:
+        scene_card_index = {
+            "summary": 0,
+            "question": 1,
+            "experiment": 2,
+            "interpretation": 3,
+        }.get(card_kind, 0)
+        selected_card = result.sceneCards[scene_card_index] if scene_card_index < len(result.sceneCards) else None
+        card_body = " ".join((selected_card.body if selected_card else result.summary).split())
+        seed = result.questionSeeds[0] if result.questionSeeds else result.summary
+
+        if card_kind == "question":
+            return (
+                f"질문을 더 선명하게 만들려면 먼저 {seed}처럼 한 가지 변화만 붙잡는 게 좋아요. "
+                f"이 장면에서는 {result.experimentCard.independentVariable}를 바꿨을 때 {result.experimentCard.dependentVariable}가 어떻게 달라지는지만 비교해 보세요. "
+                "같은 장면을 두 번만 기록해도 답의 방향이 훨씬 또렷해져요."
+            )
+        if card_kind == "experiment":
+            return (
+                f"이 카드는 {result.experimentCard.independentVariable} 하나만 바꾸고 {result.experimentCard.dependentVariable}만 기록하면 돼요. "
+                f"방법은 {result.experimentCard.method}처럼 짧게 가고, 마지막에는 {result.experimentCard.whatToWatch}를 나란히 비교하면 됩니다. "
+                f"핵심은 한 번에 여러 조건을 섞지 않는 거예요."
+            )
+        if card_kind == "interpretation":
+            return (
+                f"이 장면을 과학 말로 다시 보면 {result.scientificInterpretation.concept}을 살피는 거예요. "
+                f"{result.scientificInterpretation.explanation} "
+                f"그래서 {result.scientificInterpretation.measurementIdea}처럼 셀 수 있는 단서를 같이 보면 이해가 쉬워져요."
+            )
+        return (
+            f"이 카드에서는 {card_body or result.summary}를 먼저 단서로 보면 좋아요. "
+            f"그다음 {result.experimentCard.independentVariable}가 달라질 때 {result.experimentCard.dependentVariable}가 어떻게 바뀌는지만 좁혀서 보세요. "
+            f"지금 질문은 {', '.join(result.scienceLens[:2]) or '과학 단서'} 중 하나로 다시 묶으면 훨씬 선명해집니다."
+        )
 
     def _normalize_science_lens(self, science_lens: list[str], science_focus: str) -> list[str]:
         normalized = [lens.strip() for lens in science_lens if lens.strip()]
@@ -528,8 +740,9 @@ class OpenAIService:
 
     def _normalize_scene_visual(self, generated: GeneratedEntryResult, mode_id: str):
         mode_copy = MODE_CARD_COPY.get(mode_id, MODE_CARD_COPY["observe"])
-        prompt = generated.sceneVisual.prompt.strip()
-        prompt = f"{prompt}. {mode_copy['scene_prompt_hint']}".strip(". ")
+        prompt = self._sanitize_visual_prompt(
+            f"{generated.sceneVisual.prompt}. {mode_copy['scene_prompt_hint']}"
+        )
         if "no text" not in prompt.lower():
             prompt = f"{prompt}. No text, no watermark."
         title = generated.sceneVisual.title.strip() or mode_copy["scene_title"]
@@ -594,7 +807,7 @@ class OpenAIService:
             dependent_variable,
         )
         stage_hints = [
-            "실제 장면과 인물, 공간, 눈에 보이는 행동을 보여 준다",
+            "일기 속 장면의 인물, 공간, 눈에 보이는 행동을 그림책 장면처럼 보여 준다",
             f"독립변수 {independent_variable}와 종속변수 {dependent_variable}가 무엇인지 드러나게 보여 준다",
             "어떤 조건이 결과를 바꿀지 짧은 가설을 장면으로 보여 준다",
             "처음 측정값이나 첫 기록을 남기는 장면으로 이어진다",
@@ -611,14 +824,14 @@ class OpenAIService:
         normalized_shots = []
         for index, shot in enumerate(merged_shots[:4]):
             subtitle = stage_descriptions[index]
-            prompt = " ".join(shot.visualPrompt.split())
+            prompt = " ".join(shot.visualPrompt.split()).strip()
             if independent_variable and dependent_variable and index == 1:
-                prompt = (
+                prompt = self._sanitize_visual_prompt(
                     f"{prompt}. {mode_copy['video_prompt_hint']} 두 변수의 차이가 화면에서 구분되게 표현. "
                     "No text, no watermark, no letters, no numbers, no labels."
                 )
             else:
-                prompt = (
+                prompt = self._sanitize_visual_prompt(
                     f"{prompt}. {mode_copy['video_prompt_hint']} {stage_hints[index]}. "
                     "No text, no watermark, no letters, no numbers, no labels."
                 )
@@ -643,7 +856,7 @@ class OpenAIService:
                 f"{dependent_variable} 차이를 보고 아이가 더 큰 변화를 손가락으로 짚으며 끝난다",
             ]
             for continuation_index, hint in enumerate(continuation_hints, start=4):
-                prompt = (
+                prompt = self._sanitize_visual_prompt(
                     f"{seed_prompt} Direct continuation from the previous frame, same child, same place, "
                     f"same objects, same drawing style. {mode_copy['video_prompt_hint']} "
                     f"{stage_hints[continuation_index]}. {hint}. "
@@ -674,7 +887,7 @@ class OpenAIService:
             update={
                 "title": title,
                 "concept": video_director.concept.strip() or mode_copy["video_concept"],
-                "visualStyle": video_director.visualStyle.strip(),
+                "visualStyle": self._sanitize_visual_prompt(video_director.visualStyle),
                 "mixDirection": (
                     video_director.mixDirection.strip()
                     or mode_copy["video_mix"]
@@ -686,6 +899,28 @@ class OpenAIService:
             }
         )
 
+    def _sanitize_visual_prompt(self, prompt: str) -> str:
+        normalized = " ".join(prompt.split()).strip()
+        for pattern in PHOTO_STYLE_PATTERNS:
+            normalized = re.sub(pattern, "", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"\s*,\s*,+", ", ", normalized)
+        normalized = re.sub(r",\s*\.", ".", normalized)
+        normalized = re.sub(r"\s+\.\s+", ". ", normalized)
+        normalized = re.sub(r"(?:^|[,\s.])아님(?:$|[,\s.])", " ", normalized)
+        normalized = re.sub(r"(?:^|[,\s.])없음(?:$|[,\s.])", " ", normalized)
+        normalized = re.sub(r"(^|,\s*)없이\s+", r"\1", normalized)
+        normalized = re.sub(r"\s*,\s*,+", ", ", normalized)
+        normalized = re.sub(r",\s*\.", ".", normalized)
+        normalized = re.sub(r"\s+\.\s+", ". ", normalized)
+        normalized = re.sub(r"\s{2,}", " ", normalized)
+        normalized = normalized.strip(" .,")
+        lowered = normalized.lower()
+        if "science picture-book illustration" not in lowered:
+            normalized = f"{ILLUSTRATION_STYLE_CLAUSE}. {normalized}" if normalized else ILLUSTRATION_STYLE_CLAUSE
+        if "no photorealism" not in normalized.lower():
+            normalized = f"{normalized}. No photorealism, no live-action, no camera-photo style"
+        return normalized
+
     def _normalize_narration(
         self,
         narration,
@@ -694,16 +929,104 @@ class OpenAIService:
         independent_variable: str,
         dependent_variable: str,
     ):
-        script = " ".join(narration.script.split())
-        if len(script) < 110:
-            summary_line = " ".join(summary.split())[:90].rstrip()
-            explanation_line = " ".join(explanation.split())[:110].rstrip()
-            extension = (
-                f"이제 {independent_variable}를 바꿔 보고 {dependent_variable}가 어떻게 달라지는지 다시 본다. "
-                "두 결과를 나란히 비교한 뒤 오늘의 결론을 짧게 적고 내일 다시 확인한다."
-            )
-            script = f"{script} {summary_line} {explanation_line} {extension}".strip()
+        script = self._fit_narration_script(
+            " ".join(narration.script.split()),
+            summary,
+            explanation,
+            independent_variable,
+            dependent_variable,
+        )
         return narration.model_copy(update={"script": script})
+
+    def _fit_narration_script(
+        self,
+        original_script: str,
+        summary: str,
+        explanation: str,
+        independent_variable: str,
+        dependent_variable: str,
+    ) -> str:
+        prepared = self._trim_narration_script(original_script)
+        original_sentence_count = len(self._split_sentences(original_script))
+        is_overlong = len(" ".join(original_script.split())) > NARRATION_MAX_CHARS or original_sentence_count > NARRATION_MAX_SENTENCES
+        mentions_variables = (
+            independent_variable in prepared and dependent_variable in prepared
+        ) if independent_variable and dependent_variable else True
+        if prepared and not is_overlong and mentions_variables:
+            return prepared
+
+        rebuilt = self._build_compact_narration(
+            summary,
+            explanation,
+            independent_variable,
+            dependent_variable,
+        )
+        return self._trim_narration_script(rebuilt)
+
+    def _build_compact_narration(
+        self,
+        summary: str,
+        explanation: str,
+        independent_variable: str,
+        dependent_variable: str,
+    ) -> str:
+        summary_line = self._clip_sentence(summary, 56)
+        explanation_line = self._clip_sentence(explanation, 70)
+        variable_line = self._clip_sentence(
+            f"이제 {independent_variable}를 바꾸고 {dependent_variable}가 어떻게 달라지는지 본다.",
+            58,
+        )
+        close_line = "두 결과를 나란히 비교하고 오늘의 결론을 짧게 적는다."
+        script = " ".join(
+            line for line in [summary_line, explanation_line, variable_line, close_line] if line
+        )
+        return script.strip()
+
+    def _trim_narration_script(self, script: str) -> str:
+        sentences = self._split_sentences(script)
+        kept: list[str] = []
+        current_length = 0
+        for sentence in sentences:
+            cleaned = self._ensure_sentence_period(self._clip_sentence(sentence, 72))
+            if not cleaned:
+                continue
+            projected = current_length + len(cleaned) + (1 if kept else 0)
+            if kept and (len(kept) >= NARRATION_MAX_SENTENCES or projected > NARRATION_MAX_CHARS):
+                break
+            kept.append(cleaned)
+            current_length = projected
+
+        if not kept:
+            return ""
+        trimmed = " ".join(kept).strip()
+        if len(trimmed) > NARRATION_MAX_CHARS:
+            trimmed = self._clip_sentence(trimmed, NARRATION_MAX_CHARS)
+        return self._ensure_sentence_period(trimmed)
+
+    def _split_sentences(self, text: str) -> list[str]:
+        collapsed = " ".join(text.split())
+        if not collapsed:
+            return []
+        pieces = re.split(r"(?<=[.!?])\s+|(?<=[다요죠니다])\s+", collapsed)
+        return [piece.strip() for piece in pieces if piece.strip()]
+
+    def _clip_sentence(self, text: str, limit: int) -> str:
+        compact = " ".join(text.split()).strip(" .")
+        if len(compact) <= limit:
+            return compact
+        clipped = compact[:limit].rstrip(" ,")
+        last_break = max(clipped.rfind("."), clipped.rfind(","), clipped.rfind(" "), clipped.rfind("·"))
+        if last_break >= max(18, limit // 2):
+            clipped = clipped[:last_break].rstrip(" ,.")
+        return clipped
+
+    def _ensure_sentence_period(self, text: str) -> str:
+        normalized = text.strip()
+        if not normalized:
+            return ""
+        if normalized[-1] in ".!?":
+            return normalized
+        return f"{normalized}."
 
     def generate_scene_image(self, prompt: str) -> bytes | None:
         if not self.client or not prompt.strip():

@@ -13,6 +13,8 @@ from app.media import MediaComposer
 from app.models import (
     AnalyzeRequest,
     AnalyzeResponse,
+    CardChatRequest,
+    CardChatResponse,
     CreateEntryRequest,
     CreateEntryResponse,
     EntryStatus,
@@ -151,6 +153,32 @@ def get_entry_result(entry_id: str, store: LocalStore = Depends(get_store)) -> d
     if not store.has_result(entry_id):
         raise HTTPException(status_code=404, detail="result not ready")
     return store.load_result(entry_id).model_dump(mode="json")
+
+
+@app.post("/api/v1/entries/{entry_id}/cards/chat", response_model=CardChatResponse)
+def chat_about_result_card(
+    entry_id: str,
+    payload: CardChatRequest,
+    store: LocalStore = Depends(get_store),
+    ai: OpenAIService = Depends(get_ai),
+) -> CardChatResponse:
+    try:
+        entry = store.load_entry(entry_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="entry not found") from exc
+
+    if not store.has_result(entry_id):
+        raise HTTPException(status_code=404, detail="result not ready")
+
+    result = store.load_result(entry_id)
+    reply = ai.answer_card_chat(
+        entry.normalizedText or entry.rawText,
+        result,
+        payload.cardKind,
+        payload.message,
+        payload.history,
+    )
+    return CardChatResponse(cardKind=payload.cardKind, reply=reply)
 
 
 @app.post("/api/v1/entries/{entry_id}/mission-log")
