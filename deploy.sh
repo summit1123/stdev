@@ -229,12 +229,13 @@ run_remote_deploy_via_ssm() {
 
   log_step "Trigger remote deploy over SSM"
 
-  local remote_cmd command_id
+  local remote_cmd command_id parameters_json
   remote_cmd="sudo -u ${DEPLOY_EC2_DEPLOY_USER} -H bash -lc 'cd ${DEPLOY_EC2_PROJECT_ROOT} && ./${DEPLOY_EC2_REMOTE_SCRIPT}'"
+  parameters_json="$(jq -cn --arg cmd "${remote_cmd}" '{commands: [$cmd]}')"
 
   if [[ "${DRY_RUN}" -eq 1 ]]; then
-    printf '[dry-run] aws ssm send-command --instance-ids "%s" --document-name AWS-RunShellScript --parameters commands="%s"\n' \
-      "${DEPLOY_EC2_INSTANCE_ID}" "${remote_cmd}"
+    printf '[dry-run] aws ssm send-command --instance-ids "%s" --document-name AWS-RunShellScript --parameters %s\n' \
+      "${DEPLOY_EC2_INSTANCE_ID}" "${parameters_json}"
     return 0
   fi
 
@@ -243,7 +244,7 @@ run_remote_deploy_via_ssm() {
       --instance-ids "${DEPLOY_EC2_INSTANCE_ID}" \
       --document-name "AWS-RunShellScript" \
       --comment "kwail deploy" \
-      --parameters commands="${remote_cmd}" \
+      --parameters "${parameters_json}" \
       --query 'Command.CommandId' \
       --output text
   )"
