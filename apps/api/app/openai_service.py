@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import base64
 import io
+import json
+import re
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from openai import OpenAI
 from PIL import Image
@@ -60,6 +63,19 @@ class OpenAIService:
     @property
     def is_enabled(self) -> bool:
         return self.client is not None
+
+    @property
+    def active_tts_provider(self) -> str:
+        provider = self.settings.tts_provider.strip().lower()
+        if provider == "auto":
+            return "elevenlabs" if self.settings.elevenlabs_api_key else "openai"
+        return provider
+
+    @property
+    def active_tts_voice_label(self) -> str:
+        if self.active_tts_provider == "elevenlabs":
+            return self.settings.elevenlabs_voice_label
+        return self.settings.default_voice
 
     def moderate_text(self, text: str) -> tuple[bool, list[str]]:
         if not self.client:
@@ -587,15 +603,73 @@ class OpenAIService:
         return None
 
     def synthesize_speech(self, script: str) -> bytes | None:
-        if not self.client or not script.strip():
+        if not script.strip():
+            return None
+        provider = self.active_tts_provider
+        prepared_script = self._prepare_tts_script(script)
+        if provider == "elevenlabs":
+            return self._synthesize_with_elevenlabs(prepared_script)
+        if not self.client:
             return None
         try:
             response = self.client.audio.speech.create(
                 model=self.settings.tts_model,
                 voice=self.settings.default_voice,
-                input=script,
+                input=prepared_script,
                 instructions=TTS_INSTRUCTIONS,
             )
             return response.read()
         except Exception:
             return None
+
+    def _synthesize_with_elevenlabs(self, script: str) -> bytes | None:
+        if not self.settings.elevenlabs_api_key or not script.strip():
+            return None
+
+        voice_settings = {
+            "stability": self.settings.elevenlabs_stability,
+            "similarity_boost": self.settings.elevenlabs_similarity_boost,
+            "style": self.settings.elevenlabs_style,
+            "speed": self.settings.elevenlabs_speed,
+            "use_speaker_boost": self.settings.elevenlabs_speaker_boost,
+        }
+        payload = {
+            "text": script,
+            "model_id": self.settings.elevenlabs_model_id,
+            "language_code": self.settings.elevenlabs_language_code,
+            "voice_settings": voice_settings,
+            "apply_text_normalization": "auto",
+        }
+        endpoint = (
+            f"https://api.elevenlabs.io/v1/text-to-speech/"
+            f"{self.settings.elevenlabs_voice_id}?output_format={self.settings.elevenlabs_output_format}"
+        )
+        request = Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "xi-api-key": self.settings.elevenlabs_api_key,
+                "Content-Type": "application/json",
+                "Accept": "audio/mpeg",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=45) as response:
+                return response.read()
+        except HTTPError:
+            return None
+        except Exception:
+            return None
+
+    def _prepare_tts_script(self, script: str) -> str:
+        collapsed = " ".join(script.split())
+        if not collapsed:
+            return ""
+        pieces = re.split(r"(?<=[.!?])\s+", collapsed)
+        normalized = []
+        for piece in pieces:
+            segment = piece.strip()
+            if segment:
+                normalized.append(segment)
+        return "\n".join(normalized)

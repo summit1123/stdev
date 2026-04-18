@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.media import MediaComposer
 from app.models import DiaryEntryRecord, EntryStatus, MissionLog
 from app.openai_service import OpenAIService
@@ -19,7 +17,10 @@ class AnalysisPipeline:
             entry.parseWarnings = ["파일이 아직 업로드되지 않았어요."]
             return self.store.save_entry(entry)
 
-        file_path = self._absolute_file_path(entry.originalFileUrl)
+        file_path = self.store.original_upload_path(entry.id)
+        if file_path is None:
+            entry.parseWarnings = ["업로드 파일을 다시 찾지 못했어요."]
+            return self.store.save_entry(entry)
 
         if entry.inputType == "voice":
             parsed = self.ai.transcribe_audio(file_path, entry.originalFilename)
@@ -74,7 +75,7 @@ class AnalysisPipeline:
             audio = self.ai.synthesize_speech(result.narration.script)
             if audio:
                 result.narration.audioUrl = self.store.save_audio(entry.id, audio)
-                result.narration.voice = self.ai.settings.default_voice
+                result.narration.voice = self.ai.active_tts_voice_label
                 self.store.save_result(entry.id, result)
 
             entry.status = EntryStatus.RENDERING_VIDEO
@@ -113,7 +114,3 @@ class AnalysisPipeline:
             reflection=reflection,
         )
         return self.store.append_mission_log(entry_id, mission)
-
-    def _absolute_file_path(self, media_url: str) -> Path:
-        relative = media_url.removeprefix("/media/")
-        return self.store.settings.media_mount_dir / relative

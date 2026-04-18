@@ -31,7 +31,7 @@
 
 - OCR / 구조화 추출: `gpt-5.4-mini`
 - 교육 콘텐츠 정리: `gpt-5.4-mini`
-- TTS: `gpt-4o-mini-tts`
+- TTS: `ElevenLabs` 우선, `gpt-4o-mini-tts` 보조
 - STT: `gpt-4o-mini-transcribe`
 - 이미지 생성: `gpt-image-1`
 - 영상 생성: `sora-2-pro`
@@ -71,3 +71,10 @@ Hackathon infrastructure is managed as a single Terraform stack under
 - 커밋 규칙은 `docs/git-commit-convention.md`를 따릅니다.
 - 커밋 메시지는 `feat: 한국어 설명` 형태로 작성합니다.
 - 로컬 산출물과 비밀키는 `.gitignore`로 제외합니다.
+
+## TTS Provider
+
+- 기본 동작은 `TTS_PROVIDER=auto` 기준입니다.
+- `ELEVENLABS_API_KEY`가 있으면 ElevenLabs를 우선 사용합니다.
+- 없으면 OpenAI TTS로 내려갑니다.
+- 영상에 붙는 최종 음성은 `narration.mp3`로 저장된 뒤 ffmpeg로 영상과 다시 믹싱됩니다.

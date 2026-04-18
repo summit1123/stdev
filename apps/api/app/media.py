@@ -38,7 +38,15 @@ class MediaComposer:
         sora_asset = self._prepare_sora_request(entry_id, result)
         if sora_asset:
             if sora_asset.suffix == ".mp4":
-                result.media.soraVideoUrl = self._media_url(sora_asset)
+                mixed_sora_path = self._render_video(
+                    entry_id,
+                    result,
+                    image_paths,
+                    source_video=sora_asset,
+                    output_name="sora-video-mixed.mp4",
+                )
+                published_sora_path = mixed_sora_path or sora_asset
+                result.media.soraVideoUrl = self._media_url(published_sora_path)
             else:
                 result.media.soraRequestUrl = self._media_url(sora_asset)
         return result
@@ -69,9 +77,11 @@ class MediaComposer:
         result: EntryResult,
         image_paths: list[Path],
         source_video: Path | None = None,
+        output_name: str = "story-video.mp4",
     ) -> Path | None:
         if shutil.which("ffmpeg") is None:
             return None
+        total_duration = self._resolve_video_duration(result, source_video)
 
         if source_video is None:
             if not image_paths:
@@ -132,7 +142,7 @@ class MediaComposer:
             stitched_path = source_video
 
         audio_path = self._audio_path(entry_id)
-        final_path = self.store.abs_media_path(entry_id, "story-video.mp4")
+        final_path = self.store.abs_media_path(entry_id, output_name)
         fade_out_start = max(total_duration - 0.45, 0.1)
         if audio_path and audio_path.exists():
             self._run(
@@ -158,7 +168,9 @@ class MediaComposer:
                     "-af",
                     (
                         f"aresample=48000:resampler=soxr,"
-                        "volume=1.10,"
+                        "highpass=f=60,"
+                        "lowpass=f=12000,"
+                        "volume=1.08,"
                         "alimiter=limit=0.92,"
                         f"apad=whole_dur={total_duration}"
                     ),
@@ -197,6 +209,40 @@ class MediaComposer:
                 ]
             )
         return final_path
+
+    def _resolve_video_duration(self, result: EntryResult, source_video: Path | None) -> float:
+        if source_video and source_video.exists():
+            probed = self._probe_duration(source_video)
+            if probed:
+                return probed
+        return float(result.videoDirector.targetDurationSeconds)
+
+    def _probe_duration(self, path: Path) -> float | None:
+        if shutil.which("ffprobe") is None:
+            return None
+        try:
+            completed = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(path),
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            value = completed.stdout.strip()
+            if not value:
+                return None
+            return float(value)
+        except Exception:
+            return None
 
     def _prepare_sora_request(self, entry_id: str, result: EntryResult) -> Path | None:
         if not self.settings.sora_cli_path.exists():
@@ -383,5 +429,4 @@ class MediaComposer:
         return None
 
     def _media_url(self, path: Path) -> str:
-        relative = path.relative_to(self.settings.media_mount_dir)
-        return f"/media/{relative.as_posix()}"
+        return self.store.media_url_for_path(path)

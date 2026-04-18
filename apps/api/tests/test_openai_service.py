@@ -17,3 +17,39 @@ def test_normalize_science_lens_injects_focus_label() -> None:
 
     assert normalized[0] == "힘과 운동"
     assert "속도" in normalized
+
+
+def test_synthesize_speech_prefers_elevenlabs_when_key_exists(monkeypatch) -> None:
+    service = OpenAIService(
+        Settings(
+            openai_api_key=None,
+            elevenlabs_api_key="test-key",
+            tts_provider="auto",
+            elevenlabs_voice_id="voice-test",
+        )
+    )
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return b"fake-mp3"
+
+    captured: dict[str, str] = {}
+
+    def fake_urlopen(request, timeout=0):
+        captured["url"] = request.full_url
+        captured["api_key"] = request.headers["Xi-api-key"]
+        return FakeResponse()
+
+    monkeypatch.setattr("app.openai_service.urlopen", fake_urlopen)
+
+    audio = service.synthesize_speech("첫 문장입니다. 두 번째 문장입니다.")
+
+    assert audio == b"fake-mp3"
+    assert "voice-test" in captured["url"]
+    assert captured["api_key"] == "test-key"
