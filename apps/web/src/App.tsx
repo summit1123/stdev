@@ -777,13 +777,10 @@ function App() {
               <h1>
                 아이들이 세상을
                 <br />
-                이해하는 방식을
-                <br />
-                바꿉니다
+                <span className="hero-nowrap">이해하는 방식을 바꿉니다</span>
               </h1>
               <p className="home-hero-body">
-                손글씨 일기를 읽고, 질문과 실험, 장면 이미지와 설명 영상을 아이의 속도에 맞춰 차례대로
-                엮습니다.
+                손글씨 일기를 읽고, 질문과 실험, 장면 이미지와 설명 영상을 아이의 속도에 맞춰 엮습니다.
               </p>
               <div className="home-hero-actions">
                 <button type="button" className="home-primary" onClick={() => navigateToView('studio')}>
@@ -886,7 +883,6 @@ function App() {
         <div className="workspace-status-card">
           <strong>{currentMeta.label}</strong>
           <span>{currentMeta.detail}</span>
-          <small>{currentEntryId ? `현재 세션 ${currentEntryId.slice(-6)}` : '새 세션 준비됨'}</small>
         </div>
       </section>
 
@@ -995,9 +991,9 @@ function App() {
                   </article>
                 </div>
 
-                <div className="page-nav-row page-nav-row-spread">
+                <div className="page-nav-row page-nav-row-source">
                   <button type="button" className="secondary-action" onClick={() => navigateToView('home')}>
-                    Diary 홈
+                    이전 단계
                   </button>
                   <button
                     type="button"
@@ -1005,7 +1001,7 @@ function App() {
                     disabled={!entryStatus || entryStatus.status !== 'text_ready'}
                     onClick={() => navigateToStudioPage('ocr')}
                   >
-                    다음: OCR 확인
+                    다음 단계
                   </button>
                 </div>
               </section>
@@ -1124,7 +1120,7 @@ function App() {
                 </div>
                 <div className="page-nav-row page-nav-row-inline">
                   <button type="button" className="secondary-action" onClick={() => navigateToStudioPage('source')}>
-                    이전: 업로드
+                    이전 단계
                   </button>
                   <button
                     type="button"
@@ -1213,9 +1209,6 @@ function App() {
                         <p>생성된 영상이 여기에 나타납니다.</p>
                       </div>
                     )}
-                    <p className="panel-copy">
-                      {result?.videoDirector.concept ?? `일기 장면을 질문과 실험으로 바꾸는 ${videoDurationLabel} 설명 영상입니다.`}
-                    </p>
                   </section>
                 </div>
               </section>
@@ -1245,10 +1238,6 @@ function App() {
                           <p>업로드한 원본 일기가 여기에 나타납니다.</p>
                         </div>
                       )}
-                      <div className="panel-copy panel-copy-stack">
-                        <strong>{currentEntryId ? `일기 세션 ${currentEntryId.slice(-6)}` : '업로드된 일기'}</strong>
-                        <span>{diaryExcerpt || 'OCR로 읽은 내용이 여기에 요약됩니다.'}</span>
-                      </div>
                     </section>
 
                     <section className="media-panel result-image-panel">
@@ -1263,7 +1252,6 @@ function App() {
                           <p>생성된 상황 이미지가 여기에 나타납니다.</p>
                         </div>
                       )}
-                      <p className="panel-copy">{result.sceneVisual.caption}</p>
                     </section>
 
                   </div>
@@ -1537,10 +1525,10 @@ function App() {
 
               <div className="page-nav-row">
                 <button type="button" className="secondary-action" onClick={() => navigateToStudioPage('ocr')}>
-                  이전: OCR 확인
+                  이전 단계
                 </button>
                 <button type="button" className="primary-action" onClick={() => navigateToStudioPage('library')}>
-                  다음: 보관함
+                  다음 단계
                 </button>
               </div>
             </>
@@ -1581,7 +1569,7 @@ function App() {
               </div>
               <div className="page-nav-row">
                 <button type="button" className="secondary-action" onClick={() => navigateToStudioPage('results')}>
-                  이전: 결과 보기
+                  이전 단계
                 </button>
                 <button type="button" className="primary-action" onClick={() => navigateToStudioPage('source')}>
                   새 일기 올리기
