@@ -1,0 +1,42 @@
+{
+  "project": "Diary to Discovery",
+  "selection": "priority-order",
+  "tasks": [
+    {
+      "id": "001",
+      "title": "Lock the product workspace contract against the real app",
+      "status": "completed",
+      "priority": "p0",
+      "file": ".codex-loop/tasks/TASK-001.json"
+    },
+    {
+      "id": "002",
+      "title": "Prove the first-view workspace with runtime evidence",
+      "status": "completed",
+      "priority": "p0",
+      "file": ".codex-loop/tasks/TASK-002.json"
+    },
+    {
+      "id": "003",
+      "title": "Tighten result canvas and inspector behavior",
+      "status": "completed",
+      "priority": "p1",
+      "file": ".codex-loop/tasks/TASK-003.json"
+    },
+    {
+      "id": "004",
+      "title": "Verify real media generation and fallback behavior",
+      "status": "completed",
+      "priority": "p1",
+      "file": ".codex-loop/tasks/TASK-004.json"
+    },
+    {
+      "id": "005",
+      "title": "Capture final checks and register shippable evidence",
+      "status": "completed",
+      "priority": "p1",
+      "file": ".codex-loop/tasks/TASK-005.json"
+    }
+  ],
+  "source": "manual-alignment"
+}

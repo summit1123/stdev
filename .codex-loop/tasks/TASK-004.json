@@ -1,0 +1,23 @@
+{
+  "id": "004",
+  "title": "Verify real media generation and fallback behavior",
+  "status": "completed",
+  "priority": "p1",
+  "summary": "Run a real diary sample through the pipeline and confirm image, audio, video, persistence, and fallback states behave truthfully.",
+  "dependsOn": [
+    "002",
+    "003"
+  ],
+  "deliverables": [
+    "data/entries/",
+    ".codex-loop/artifacts/"
+  ],
+  "acceptance": [
+    "A real uploaded diary produces saved result JSON, media assets, and playable output.",
+    "If one media step fails, the rest of the result still renders with an explicit state.",
+    "Evidence includes URLs, logs, or screenshots tied to a concrete entry id."
+  ],
+  "notes": [
+    "Completed with the user's latest image `/Users/gimdonghyeon/Downloads/output_746520522.jpg` on entry `entry_11d07e3851cb`."
+  ]
+}

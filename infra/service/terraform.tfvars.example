@@ -1,0 +1,12 @@
+project_name     = "diary-to-discovery"
+environment      = "hackathon"
+aws_region       = "ap-northeast-2"
+aws_profile      = null
+hosted_zone_name = "summit1123.co.kr"
+web_domain       = "app.summit1123.co.kr"
+api_domain       = "api.summit1123.co.kr"
+
+app_tags = {
+  Team  = "hackathon"
+  Owner = "gimdonghyeon"
+}

@@ -1,0 +1,10 @@
+{
+  "name": "diary-to-discovery",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "web:dev": "pnpm --dir apps/web dev --host 0.0.0.0 --port 4173",
+    "web:build": "pnpm --dir apps/web build",
+    "web:lint": "pnpm --dir apps/web lint"
+  }
+}

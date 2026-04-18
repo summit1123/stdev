@@ -1,0 +1,24 @@
+{
+  "id": "002",
+  "title": "Prove the first-view workspace with runtime evidence",
+  "status": "completed",
+  "priority": "p0",
+  "summary": "Make the first viewport read like a real tool workspace, then capture runtime evidence and approved assets that prove the state.",
+  "dependsOn": [
+    "001"
+  ],
+  "deliverables": [
+    "apps/web/src/App.tsx",
+    "apps/web/src/App.css",
+    ".codex-loop/assets/registry.json",
+    ".codex-loop/artifacts/"
+  ],
+  "acceptance": [
+    "The first viewport shows the actual tool workspace instead of a marketing-style hero.",
+    "Primary source, result canvas, and inspector roles are visually distinct and believable.",
+    "A current runtime screenshot is captured and registered as an approved asset."
+  ],
+  "notes": [
+    "Completed with the source / main canvas / inspector first view and runtime screenshot capture."
+  ]
+}

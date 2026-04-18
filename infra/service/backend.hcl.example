@@ -1,0 +1,5 @@
+bucket         = "replace-with-terraform-state-bucket"
+key            = "stdev/hackathon/service.tfstate"
+region         = "ap-northeast-2"
+dynamodb_table = "replace-with-terraform-lock-table"
+encrypt        = true

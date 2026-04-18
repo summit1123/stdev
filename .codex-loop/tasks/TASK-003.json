@@ -1,0 +1,22 @@
+{
+  "id": "003",
+  "title": "Tighten result canvas and inspector behavior",
+  "status": "completed",
+  "priority": "p1",
+  "summary": "Polish the result surface so media, science explanation, game content, scenario, and mission loop feel like one coherent product flow.",
+  "dependsOn": [
+    "002"
+  ],
+  "deliverables": [
+    "apps/web/src/App.tsx",
+    "apps/web/src/App.css"
+  ],
+  "acceptance": [
+    "Generated media, explanation, and mission sections have clear hierarchy and no dead space.",
+    "The inspector stays useful on desktop and collapses cleanly on smaller viewports.",
+    "The page no longer feels like generic AI scaffolding."
+  ],
+  "notes": [
+    "Completed after reducing header height, compressing the source column, moving the action bar upward, and enabling partial-result UI behavior."
+  ]
+}
