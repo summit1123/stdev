@@ -17,6 +17,8 @@ class MediaComposer:
         self.settings = settings
         self.store = store
         self.font_path = self._resolve_font_path()
+        self.ffmpeg_path = self._resolve_binary("ffmpeg")
+        self.ffprobe_path = self._resolve_binary("ffprobe")
 
     def render(self, entry_id: str, result: EntryResult) -> EntryResult:
         image_paths = self._render_storyboards(entry_id, result)
@@ -64,7 +66,7 @@ class MediaComposer:
         source_video: Path | None = None,
         output_name: str = "story-video.mp4",
     ) -> Path | None:
-        if shutil.which("ffmpeg") is None:
+        if self.ffmpeg_path is None:
             return None
         total_duration = self._resolve_video_duration(result, source_video)
 
@@ -80,7 +82,7 @@ class MediaComposer:
                     result.videoDirector.shots[index].durationSeconds if index < len(result.videoDirector.shots) else 3
                 )
                 cmd = [
-                    "ffmpeg",
+                    str(self.ffmpeg_path),
                     "-y",
                     "-loop",
                     "1",
@@ -110,7 +112,7 @@ class MediaComposer:
             stitched_path = self.store.abs_media_path(entry_id, "story-video-base.mp4")
             self._run(
                 [
-                    "ffmpeg",
+                    str(self.ffmpeg_path),
                     "-y",
                     "-f",
                     "concat",
@@ -132,7 +134,7 @@ class MediaComposer:
         if audio_path and audio_path.exists():
             self._run(
                 [
-                    "ffmpeg",
+                    str(self.ffmpeg_path),
                     "-y",
                     "-i",
                     str(stitched_path),
@@ -175,7 +177,7 @@ class MediaComposer:
         else:
             self._run(
                 [
-                    "ffmpeg",
+                    str(self.ffmpeg_path),
                     "-y",
                     "-i",
                     str(stitched_path),
@@ -203,12 +205,12 @@ class MediaComposer:
         return float(result.videoDirector.targetDurationSeconds)
 
     def _probe_duration(self, path: Path) -> float | None:
-        if shutil.which("ffprobe") is None:
+        if self.ffprobe_path is None:
             return None
         try:
             completed = subprocess.run(
                 [
-                    "ffprobe",
+                    str(self.ffprobe_path),
                     "-v",
                     "error",
                     "-show_entries",
@@ -304,6 +306,21 @@ class MediaComposer:
             Path("/System/Library/Fonts/AppleSDGothicNeo.ttc"),
             Path("/System/Library/Fonts/Supplemental/AppleGothic.ttf"),
             Path("/Library/Fonts/Arial Unicode.ttf"),
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _resolve_binary(self, name: str) -> Path | None:
+        discovered = shutil.which(name)
+        if discovered:
+            return Path(discovered)
+
+        candidates = [
+            Path(f"/opt/homebrew/bin/{name}"),
+            Path(f"/usr/local/bin/{name}"),
+            Path(f"/usr/bin/{name}"),
         ]
         for candidate in candidates:
             if candidate.exists():
