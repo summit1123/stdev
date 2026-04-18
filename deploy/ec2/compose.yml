@@ -7,6 +7,8 @@ services:
     env_file:
       - ${KWAIL_SHARED_DIR}/runtime.env
       - ${KWAIL_SHARED_DIR}/secrets.env
+    environment:
+      KWAIL_PROJECT_ROOT: /app
     volumes:
       - ${KWAIL_SHARED_DIR}/data:/app/data
 
