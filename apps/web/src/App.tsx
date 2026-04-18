@@ -879,11 +879,6 @@ function App() {
             필요할 때만 다음 깊이로 내려갑니다.
           </p>
         </div>
-
-        <div className="workspace-status-card">
-          <strong>{currentMeta.label}</strong>
-          <span>{currentMeta.detail}</span>
-        </div>
       </section>
 
       <section className="studio-route-shell">
