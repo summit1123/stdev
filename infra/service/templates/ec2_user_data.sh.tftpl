@@ -1,0 +1,69 @@
+#!/bin/bash
+set -euxo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y ca-certificates curl gnupg git unzip jq
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+
+. /etc/os-release
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $${VERSION_CODENAME} stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin nodejs
+
+systemctl enable docker
+systemctl start docker
+
+snap install amazon-ssm-agent --classic || true
+systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+snap install aws-cli --classic || true
+
+corepack enable
+corepack prepare pnpm@10.17.0 --activate
+
+id -u ${deploy_user} >/dev/null 2>&1 || adduser --disabled-password --gecos "" ${deploy_user}
+usermod -aG docker ${deploy_user}
+
+mkdir -p ${project_root}/shared/data ${project_root}/shared/logs ${project_root}/app
+chown -R ${deploy_user}:${deploy_user} ${project_root}
+
+cat > ${project_root}/shared/runtime.env <<EOF
+APP_ENV=production
+CORS_ORIGIN=https://${web_domain}
+MEDIA_STORAGE_BACKEND=s3
+MEDIA_S3_BUCKET=${media_bucket_name}
+MEDIA_S3_REGION=${aws_region}
+MEDIA_S3_PREFIX=media
+MEDIA_S3_PUBLIC_BASE_URL=${media_public_base_url}
+TTS_PROVIDER=elevenlabs
+KWAIL_PROJECT_ROOT=${project_root}/app
+EOF
+
+cat > ${project_root}/shared/deploy.env <<EOF
+APP_DOMAIN=${web_domain}
+API_DOMAIN=${api_domain}
+AWS_REGION=${aws_region}
+KWAIL_PROJECT_ROOT=${project_root}/app
+KWAIL_SHARED_DIR=${project_root}/shared
+REPO_URL=${repo_url}
+REPO_BRANCH=${repo_branch}
+SSM_PARAMETER_PREFIX=${parameter_prefix}
+EOF
+
+if [ ! -d "${project_root}/app/.git" ]; then
+  sudo -u ${deploy_user} git clone --branch ${repo_branch} ${repo_url} ${project_root}/app
+else
+  sudo -u ${deploy_user} git -C ${project_root}/app fetch origin ${repo_branch}
+  sudo -u ${deploy_user} git -C ${project_root}/app checkout ${repo_branch}
+  sudo -u ${deploy_user} git -C ${project_root}/app reset --hard origin/${repo_branch}
+fi

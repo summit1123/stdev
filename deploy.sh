@@ -18,13 +18,14 @@ Usage: ./deploy.sh [options]
 
 Options:
   --dry-run            Print commands without executing them.
-  --skip-web           Skip web build and S3 sync.
-  --skip-api           Skip API image push or custom API deploy command.
+  --skip-web           Skip the web deployment step.
+  --skip-api           Skip the API deployment step.
   --skip-infra         Skip Terraform apply.
   --skip-healthcheck   Skip the final health check.
   --help               Show this message.
 
 Environment variables:
+  DEPLOY_TARGET                        Deploy mode. Use ec2-ssm for the EC2 runtime.
   DEPLOY_WEB_BUILD_CMD                Command to build the web app.
   DEPLOY_WEB_DIST_DIR                 Directory to sync to S3.
   DEPLOY_WEB_S3_BUCKET                Target S3 bucket for the web build.
@@ -41,6 +42,12 @@ Environment variables:
   DEPLOY_API_BUILD_CONTEXT            Docker build context. Default: apps/api
   DEPLOY_API_LOCAL_IMAGE_NAME         Local temporary image name. Default: kwail-api
   DEPLOY_API_START_DEPLOYMENT         Set to 1 to call aws apprunner start-deployment after push.
+  DEPLOY_EC2_INSTANCE_ID              EC2 instance ID used by ec2-ssm mode.
+  DEPLOY_EC2_PROJECT_ROOT             Project root on the instance. Default: /opt/kwail/app
+  DEPLOY_EC2_DEPLOY_USER              OS user that runs the deploy script. Default: ubuntu
+  DEPLOY_EC2_REMOTE_SCRIPT            Remote deploy script. Default: deploy/ec2/deploy-remote.sh
+  DEPLOY_EC2_SSM_PARAMETER_PREFIX     SSM parameter prefix used for runtime secrets.
+  DEPLOY_SECRET_ENV_KEYS              Space-separated env keys pushed to SSM. Default: OPENAI_API_KEY ELEVENLABS_API_KEY
   DEPLOY_RUN_TERRAFORM                Set to 1 to run Terraform apply.
   DEPLOY_TERRAFORM_DIR                Terraform root. Default: infra/service
   DEPLOY_TERRAFORM_INIT               Set to 1 to run terraform init before apply.
@@ -113,10 +120,15 @@ DEPLOY_TERRAFORM_INIT="${DEPLOY_TERRAFORM_INIT:-0}"
 DEPLOY_TERRAFORM_INIT_ARGS="${DEPLOY_TERRAFORM_INIT_ARGS:-}"
 DEPLOY_TERRAFORM_APPLY_ARGS="${DEPLOY_TERRAFORM_APPLY_ARGS:--auto-approve}"
 DEPLOY_RUN_TERRAFORM="${DEPLOY_RUN_TERRAFORM:-0}"
+DEPLOY_TARGET="${DEPLOY_TARGET:-legacy}"
 DEPLOY_API_DOCKERFILE="${DEPLOY_API_DOCKERFILE:-apps/api/Dockerfile}"
 DEPLOY_API_BUILD_CONTEXT="${DEPLOY_API_BUILD_CONTEXT:-apps/api}"
 DEPLOY_API_LOCAL_IMAGE_NAME="${DEPLOY_API_LOCAL_IMAGE_NAME:-kwail-api}"
 DEPLOY_API_START_DEPLOYMENT="${DEPLOY_API_START_DEPLOYMENT:-1}"
+DEPLOY_EC2_PROJECT_ROOT="${DEPLOY_EC2_PROJECT_ROOT:-/opt/kwail/app}"
+DEPLOY_EC2_DEPLOY_USER="${DEPLOY_EC2_DEPLOY_USER:-ubuntu}"
+DEPLOY_EC2_REMOTE_SCRIPT="${DEPLOY_EC2_REMOTE_SCRIPT:-deploy/ec2/deploy-remote.sh}"
+DEPLOY_SECRET_ENV_KEYS="${DEPLOY_SECRET_ENV_KEYS:-OPENAI_API_KEY ELEVENLABS_API_KEY}"
 
 if git -C "${ROOT_DIR}" rev-parse --short HEAD >/dev/null 2>&1; then
   GIT_SHA="$(git -C "${ROOT_DIR}" rev-parse --short HEAD)"
@@ -151,7 +163,16 @@ hydrate_deploy_targets() {
   DEPLOY_WEB_CLOUDFRONT_DISTRIBUTION_ID="${DEPLOY_WEB_CLOUDFRONT_DISTRIBUTION_ID:-$(terraform_output_raw web_distribution_id)}"
   DEPLOY_API_ECR_REPOSITORY_URI="${DEPLOY_API_ECR_REPOSITORY_URI:-$(terraform_output_raw api_ecr_repository_url)}"
   DEPLOY_API_APP_RUNNER_SERVICE_ARN="${DEPLOY_API_APP_RUNNER_SERVICE_ARN:-$(terraform_output_raw api_service_arn)}"
-  DEPLOY_HEALTHCHECK_URL="${DEPLOY_HEALTHCHECK_URL:-$(terraform_output_raw api_url)}"
+  DEPLOY_EC2_INSTANCE_ID="${DEPLOY_EC2_INSTANCE_ID:-$(terraform_output_raw ec2_instance_id)}"
+  DEPLOY_EC2_SSM_PARAMETER_PREFIX="${DEPLOY_EC2_SSM_PARAMETER_PREFIX:-$(terraform_output_raw ec2_ssm_parameter_prefix)}"
+  DEPLOY_EC2_ORIGIN_URL="${DEPLOY_EC2_ORIGIN_URL:-$(terraform_output_raw ec2_origin_http_url)}"
+  if [[ -z "${DEPLOY_HEALTHCHECK_URL:-}" ]]; then
+    if [[ "${DEPLOY_TARGET}" == "ec2-ssm" && -n "${DEPLOY_EC2_ORIGIN_URL:-}" ]]; then
+      DEPLOY_HEALTHCHECK_URL="${DEPLOY_EC2_ORIGIN_URL}/health"
+    else
+      DEPLOY_HEALTHCHECK_URL="$(terraform_output_raw api_url)"
+    fi
+  fi
 }
 
 trim_slashes() {
@@ -172,6 +193,72 @@ join_s3_path() {
   fi
 }
 
+put_secure_parameter() {
+  local name="$1"
+  local value="$2"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf '[dry-run] aws ssm put-parameter --name "%s" --type SecureString --overwrite --value "***"\n' "${name}"
+    return 0
+  fi
+  aws ssm put-parameter --name "${name}" --type SecureString --overwrite --value "${value}" >/dev/null
+}
+
+sync_runtime_secrets() {
+  if [[ -z "${DEPLOY_EC2_SSM_PARAMETER_PREFIX:-}" ]]; then
+    echo "DEPLOY_EC2_SSM_PARAMETER_PREFIX is required for ec2-ssm mode." >&2
+    exit 1
+  fi
+
+  log_step "Sync runtime secrets to SSM"
+  local key value
+  for key in ${DEPLOY_SECRET_ENV_KEYS}; do
+    value="${!key:-}"
+    if [[ -z "${value}" ]]; then
+      echo "Missing required env value for ${key}." >&2
+      exit 1
+    fi
+    put_secure_parameter "${DEPLOY_EC2_SSM_PARAMETER_PREFIX}/${key}" "${value}"
+  done
+}
+
+run_remote_deploy_via_ssm() {
+  if [[ -z "${DEPLOY_EC2_INSTANCE_ID:-}" ]]; then
+    echo "DEPLOY_EC2_INSTANCE_ID is required for ec2-ssm mode." >&2
+    exit 1
+  fi
+
+  log_step "Trigger remote deploy over SSM"
+
+  local remote_cmd command_id
+  remote_cmd="sudo -u ${DEPLOY_EC2_DEPLOY_USER} -H bash -lc 'cd ${DEPLOY_EC2_PROJECT_ROOT} && ./${DEPLOY_EC2_REMOTE_SCRIPT}'"
+
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf '[dry-run] aws ssm send-command --instance-ids "%s" --document-name AWS-RunShellScript --parameters commands="%s"\n' \
+      "${DEPLOY_EC2_INSTANCE_ID}" "${remote_cmd}"
+    return 0
+  fi
+
+  command_id="$(
+    aws ssm send-command \
+      --instance-ids "${DEPLOY_EC2_INSTANCE_ID}" \
+      --document-name "AWS-RunShellScript" \
+      --comment "kwail deploy" \
+      --parameters commands="${remote_cmd}" \
+      --query 'Command.CommandId' \
+      --output text
+  )"
+
+  aws ssm wait command-executed \
+    --command-id "${command_id}" \
+    --instance-id "${DEPLOY_EC2_INSTANCE_ID}"
+
+  aws ssm get-command-invocation \
+    --command-id "${command_id}" \
+    --instance-id "${DEPLOY_EC2_INSTANCE_ID}" \
+    --output text \
+    --query '[Status,StandardOutputContent,StandardErrorContent]'
+}
+
 if [[ "${RUN_INFRA}" -eq 1 && "${DEPLOY_RUN_TERRAFORM}" == "1" ]]; then
   if [[ "${DEPLOY_TERRAFORM_INIT}" == "1" ]]; then
     log_step "Terraform init"
@@ -186,6 +273,26 @@ elif [[ "${RUN_INFRA}" -eq 1 ]]; then
 fi
 
 hydrate_deploy_targets
+
+if [[ "${DEPLOY_TARGET}" == "ec2-ssm" ]]; then
+  if [[ "${RUN_WEB}" -eq 1 || "${RUN_API}" -eq 1 ]]; then
+    sync_runtime_secrets
+    run_remote_deploy_via_ssm
+  fi
+
+  if [[ "${RUN_HEALTHCHECK}" -eq 1 ]]; then
+    if [[ -n "${DEPLOY_HEALTHCHECK_URL:-}" ]]; then
+      log_step "Health check"
+      run_cmd "curl --fail --silent --show-error \"${DEPLOY_HEALTHCHECK_URL}\""
+    else
+      log_step "Health check"
+      echo "Skipping health check because DEPLOY_HEALTHCHECK_URL is not set."
+    fi
+  fi
+
+  printf '\nDeploy flow complete.\n'
+  exit 0
+fi
 
 if [[ "${RUN_WEB}" -eq 1 ]]; then
   if [[ -z "${DEPLOY_WEB_S3_BUCKET:-}" ]]; then

@@ -97,3 +97,28 @@ output "api_custom_domain_validation_records" {
   description = "Certificate validation records for the App Runner custom domain."
   value       = try(aws_apprunner_custom_domain_association.api[0].certificate_validation_records, null)
 }
+
+output "ec2_instance_id" {
+  description = "EC2 instance ID for the runtime host."
+  value       = try(aws_instance.runtime[0].id, null)
+}
+
+output "ec2_public_ip" {
+  description = "Public IP or Elastic IP for the runtime host."
+  value       = local.ec2_public_ip
+}
+
+output "ec2_public_dns" {
+  description = "Public DNS name for the runtime host."
+  value       = try(aws_instance.runtime[0].public_dns, null)
+}
+
+output "ec2_ssm_parameter_prefix" {
+  description = "SSM parameter prefix used to store runtime secrets."
+  value       = local.ec2_ssm_parameter_prefix
+}
+
+output "ec2_origin_http_url" {
+  description = "Direct HTTP origin URL for the EC2 runtime host."
+  value       = local.ec2_public_ip != null ? "http://${local.ec2_public_ip}" : null
+}

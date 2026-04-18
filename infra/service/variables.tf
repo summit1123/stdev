@@ -236,3 +236,87 @@ variable "create_api_custom_domain" {
   type        = bool
   default     = false
 }
+
+variable "create_ec2_runtime" {
+  description = "Whether Terraform should manage an EC2 runtime for the app."
+  type        = bool
+  default     = true
+}
+
+variable "ec2_instance_type" {
+  description = "EC2 instance type for the runtime host."
+  type        = string
+  default     = "c7i.2xlarge"
+}
+
+variable "ec2_root_volume_size" {
+  description = "Root EBS volume size for the runtime host in GiB."
+  type        = number
+  default     = 150
+}
+
+variable "ec2_root_volume_type" {
+  description = "Root EBS volume type for the runtime host."
+  type        = string
+  default     = "gp3"
+}
+
+variable "ec2_vpc_id" {
+  description = "Optional VPC ID for the runtime host. Defaults to the default VPC."
+  type        = string
+  default     = null
+}
+
+variable "ec2_subnet_id" {
+  description = "Optional subnet ID for the runtime host. Defaults to the first subnet in the default VPC."
+  type        = string
+  default     = null
+}
+
+variable "ec2_allowed_http_cidrs" {
+  description = "CIDR blocks allowed to reach HTTP on the runtime host."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "ec2_allowed_https_cidrs" {
+  description = "CIDR blocks allowed to reach HTTPS on the runtime host."
+  type        = list(string)
+  default     = []
+}
+
+variable "ec2_create_eip" {
+  description = "Whether Terraform should allocate and attach an Elastic IP."
+  type        = bool
+  default     = true
+}
+
+variable "ec2_repo_url" {
+  description = "Git repository URL the instance should clone and deploy."
+  type        = string
+  default     = "https://github.com/summit1123/stdev.git"
+}
+
+variable "ec2_repo_branch" {
+  description = "Git branch the instance should deploy."
+  type        = string
+  default     = "main"
+}
+
+variable "ec2_project_root" {
+  description = "Base directory on the instance used for the deployment."
+  type        = string
+  default     = "/opt/kwail"
+}
+
+variable "ec2_deploy_user" {
+  description = "OS user that owns the deployed repository on the instance."
+  type        = string
+  default     = "ubuntu"
+}
+
+variable "ec2_ssm_parameter_prefix" {
+  description = "SSM parameter path prefix used for runtime secrets."
+  type        = string
+  default     = null
+}

@@ -92,21 +92,20 @@ The deploy command can sit on top of this. A practical flow is:
 
 The repository is now aligned around one repeatable AWS flow:
 
-- Web: S3 bucket + CloudFront distribution
-- API: ECR repository + App Runner service
+- Runtime: EC2 instance (`c7i.2xlarge` by default) + Docker Compose
+- Reverse proxy: Nginx on the EC2 host
 - Media: S3 bucket + IAM policy for runtime access
-- DNS: optional in Terraform, because Cloudflare can stay in front until
-  you decide to move public DNS ownership
+- DNS: Cloudflare in front of the EC2 origin
 
 Terraform manages the infrastructure itself. `deploy.sh` handles the
 artifact push:
 
-1. `terraform apply` creates or updates S3, CloudFront, ECR, App Runner,
-   and the media bucket.
-2. `./deploy.sh` builds the web app and syncs it to the managed S3
-   bucket, then invalidates CloudFront.
-3. The same script builds the API Docker image, pushes it to ECR, and
-   optionally triggers `aws apprunner start-deployment`.
+1. `terraform apply` creates or updates the EC2 host, EIP, IAM, security
+   group, and the media bucket.
+2. `./deploy.sh` pushes the runtime secrets to SSM Parameter Store.
+3. The same script triggers an SSM Run Command on the instance.
+4. The instance pulls the latest repo, builds the web app, rebuilds the
+   API container, and brings `docker compose` back up.
 
 ## First Real Apply
 
@@ -121,10 +120,10 @@ cp deploy.env.example deploy.env
 2. Fill in:
 
 - the real Terraform state bucket/table in `backend.hcl`
-- the real ACM certificate ARN in `terraform.tfvars` if you want the web
-  domain attached directly to CloudFront
-- `api_runtime_secret_arns` with Secrets Manager ARNs for values such as
-  `OPENAI_API_KEY` and `ELEVENLABS_API_KEY`
+- the real Cloudflare-facing domains in `terraform.tfvars`
+- any VPC/subnet overrides if you do not want the default VPC
+- `.env` locally with the real `OPENAI_API_KEY` and
+  `ELEVENLABS_API_KEY`
 
 3. Initialize and review the plan:
 
@@ -145,6 +144,10 @@ terraform -chdir=infra/service apply
 ./deploy.sh
 ```
 
-If Cloudflare stays as the public edge for now, leave
-`create_web_dns_record = false` and point the Cloudflare routes at the
-Terraform outputs instead of letting Route53 own the public hostname.
+6. Point Cloudflare DNS records at the Terraform output `ec2_public_ip`:
+
+- `diary-app.summit1123.co.kr` -> A record -> `ec2_public_ip`
+- `diary-api.summit1123.co.kr` -> A record -> `ec2_public_ip`
+
+Keep Cloudflare proxied if you want the public hostname to stay stable
+while the origin remains plain HTTP on port 80.

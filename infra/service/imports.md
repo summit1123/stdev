@@ -21,7 +21,7 @@ For every existing resource:
 2. CloudFront distributions
 3. Route53 records
 4. ECR repositories
-5. App Runner or ECS services
+5. EC2 instances, Elastic IPs, IAM instance profiles
 6. ACM certificates
 7. Security groups, VPC, IAM
 
@@ -90,10 +90,12 @@ terraform import aws_acm_certificate.web arn:aws:acm:us-east-1:123456789012:cert
 terraform import aws_ecr_repository.api diary-to-discovery-api
 ```
 
-### App Runner service
+### EC2 instance
 
 ```bash
-terraform import aws_apprunner_service.api arn:aws:apprunner:ap-northeast-2:123456789012:service/diary-api/abc123
+terraform import aws_instance.runtime i-0123456789abcdef0
+terraform import aws_eip.runtime eipalloc-0123456789abcdef0
+terraform import aws_security_group.runtime sg-0123456789abcdef0
 ```
 
 ### ECS cluster or service

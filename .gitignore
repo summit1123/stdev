@@ -48,6 +48,8 @@ crash.*.log
 # Local infra artifacts
 infra/inventory/*.json
 infra/service/backend.hcl
+infra/service/terraform.tfvars
+deploy.env
 deploy.env
 
 .codex/

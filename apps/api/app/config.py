@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -7,7 +8,25 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+def resolve_project_root() -> Path:
+    override = os.getenv("KWAIL_PROJECT_ROOT")
+    if override:
+        return Path(override).expanduser().resolve()
+
+    current = Path(__file__).resolve()
+    detected_api_root: Path | None = None
+
+    for parent in current.parents:
+        if (parent / ".env").exists():
+            return parent
+        if (parent / "pyproject.toml").exists():
+            detected_api_root = parent
+
+    return detected_api_root or current.parent.parent
+
+
+PROJECT_ROOT = resolve_project_root()
 
 
 class Settings(BaseSettings):
