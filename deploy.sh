@@ -128,6 +128,8 @@ DEPLOY_API_START_DEPLOYMENT="${DEPLOY_API_START_DEPLOYMENT:-1}"
 DEPLOY_EC2_PROJECT_ROOT="${DEPLOY_EC2_PROJECT_ROOT:-/opt/kwail/app}"
 DEPLOY_EC2_DEPLOY_USER="${DEPLOY_EC2_DEPLOY_USER:-ubuntu}"
 DEPLOY_EC2_REMOTE_SCRIPT="${DEPLOY_EC2_REMOTE_SCRIPT:-deploy/ec2/deploy-remote.sh}"
+DEPLOY_EC2_REPO_BRANCH="${DEPLOY_EC2_REPO_BRANCH:-main}"
+DEPLOY_EC2_REPO_URL="${DEPLOY_EC2_REPO_URL:-$(git -C "${ROOT_DIR}" remote get-url origin 2>/dev/null || true)}"
 DEPLOY_SECRET_ENV_KEYS="${DEPLOY_SECRET_ENV_KEYS:-OPENAI_API_KEY ELEVENLABS_API_KEY}"
 
 if git -C "${ROOT_DIR}" rev-parse --short HEAD >/dev/null 2>&1; then
@@ -230,7 +232,7 @@ run_remote_deploy_via_ssm() {
   log_step "Trigger remote deploy over SSM"
 
   local remote_cmd command_id parameters_json
-  remote_cmd="sudo -u ${DEPLOY_EC2_DEPLOY_USER} -H bash -lc 'cd ${DEPLOY_EC2_PROJECT_ROOT} && ./${DEPLOY_EC2_REMOTE_SCRIPT}'"
+  remote_cmd="sudo -u ${DEPLOY_EC2_DEPLOY_USER} -H bash -lc 'set -euo pipefail; if [ ! -d \"${DEPLOY_EC2_PROJECT_ROOT}/.git\" ]; then git clone --branch \"${DEPLOY_EC2_REPO_BRANCH}\" \"${DEPLOY_EC2_REPO_URL}\" \"${DEPLOY_EC2_PROJECT_ROOT}\"; fi; cd \"${DEPLOY_EC2_PROJECT_ROOT}\"; git fetch origin \"${DEPLOY_EC2_REPO_BRANCH}\"; git checkout \"${DEPLOY_EC2_REPO_BRANCH}\"; git reset --hard \"origin/${DEPLOY_EC2_REPO_BRANCH}\"; ./${DEPLOY_EC2_REMOTE_SCRIPT}'"
   parameters_json="$(jq -cn --arg cmd "${remote_cmd}" '{commands: [$cmd]}')"
 
   if [[ "${DRY_RUN}" -eq 1 ]]; then
