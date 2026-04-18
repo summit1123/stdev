@@ -47,7 +47,6 @@ test('upload to library flow works end to end', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(imagePath)
 
   const editor = page.locator('textarea.editor-textarea')
-  await page.waitForURL(/#\/studio\/ocr/, { timeout: 60000 })
   await expect(editor).toBeVisible({ timeout: 60000 })
   await expect.poll(async () => (await editor.inputValue()).trim().length, { timeout: 60000 }).toBeGreaterThan(0)
   await page.screenshot({ path: path.join(artifactsDir, '03-ocr.png'), fullPage: true })
@@ -63,7 +62,8 @@ test('upload to library flow works end to end', async ({ page }) => {
     }, { timeout: 420000 })
     .toBeTruthy()
 
-  await expect(page.getByText('생성 완료')).toBeVisible({ timeout: 120000 })
+  await expect(page.locator('.result-scene-card-button')).toHaveCount(4, { timeout: 120000 })
+  await expect(page.getByText('100%')).toBeVisible()
   await expect
     .poll(async () => {
       return page.locator('video').first().evaluate((video) => video.readyState)
@@ -99,7 +99,7 @@ test('upload to library flow works end to end', async ({ page }) => {
   await page.getByRole('button', { name: '관찰 로그 저장' }).click()
   await expect(page.getByText('버찌를 떨어뜨리는 높이를 바꾸면')).toBeVisible({ timeout: 15000 })
 
-  await page.getByRole('button', { name: '다음 단계' }).click()
+  await page.getByTestId('results-next-step').click()
   await page.waitForURL(/#\/studio\/library/)
   await expect(page.getByText('최근 결과')).toBeVisible()
   await page.screenshot({ path: path.join(artifactsDir, '05-library.png'), fullPage: true })

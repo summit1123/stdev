@@ -1679,10 +1679,20 @@ function App() {
               )}
 
               <div className="page-nav-row">
-                <button type="button" className="secondary-action" onClick={() => navigateToStudioPage('ocr')}>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  data-testid="results-prev-step"
+                  onClick={() => navigateToStudioPage('ocr')}
+                >
                   이전 단계
                 </button>
-                <button type="button" className="primary-action" onClick={() => navigateToStudioPage('library')}>
+                <button
+                  type="button"
+                  className="primary-action"
+                  data-testid="results-next-step"
+                  onClick={() => navigateToStudioPage('library')}
+                >
                   다음 단계
                 </button>
               </div>
