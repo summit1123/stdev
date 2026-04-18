@@ -1,0 +1,10 @@
+feat: 변경 내용을 한국어로 한 줄 요약
+
+# 타입 예시
+# feat: 기능 추가
+# fix: 버그 수정
+# design: UI/UX 개선
+# refactor: 구조 개선
+# docs: 문서 수정
+# test: 테스트 수정
+# chore: 설정/스크립트/의존성 정리
