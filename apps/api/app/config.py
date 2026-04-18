@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     app_name: str = "kwail API"
     app_env: str = "development"
     cors_origin: str = "http://localhost:4173"
+    public_api_base_url: str | None = None
     data_dir: Path = Field(default_factory=lambda: PROJECT_ROOT / "data")
     parser_model: str = "gpt-5.4-mini"
     polish_model: str = "gpt-5.4-mini"

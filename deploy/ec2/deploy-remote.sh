@@ -14,6 +14,17 @@ if [[ -f "${DEPLOY_ENV_FILE}" ]]; then
   set +a
 fi
 
+if [[ -n "${API_DOMAIN:-}" ]]; then
+  mkdir -p "${SHARED_DIR}"
+  touch "${SHARED_DIR}/runtime.env"
+  if grep -q '^PUBLIC_API_BASE_URL=' "${SHARED_DIR}/runtime.env"; then
+    sed -i.bak "s#^PUBLIC_API_BASE_URL=.*#PUBLIC_API_BASE_URL=https://${API_DOMAIN}#" "${SHARED_DIR}/runtime.env"
+  else
+    printf 'PUBLIC_API_BASE_URL=https://%s\n' "${API_DOMAIN}" >> "${SHARED_DIR}/runtime.env"
+  fi
+  rm -f "${SHARED_DIR}/runtime.env.bak"
+fi
+
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
     echo "Missing required command: $1" >&2

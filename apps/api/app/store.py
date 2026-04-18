@@ -52,7 +52,9 @@ class LocalStore:
 
     def load_entry(self, entry_id: str) -> DiaryEntryRecord:
         payload = json.loads(self.entry_json_path(entry_id).read_text(encoding="utf-8"))
-        return DiaryEntryRecord.model_validate(payload)
+        entry = DiaryEntryRecord.model_validate(payload)
+        entry.originalFileUrl = self._absolutize_url(entry.originalFileUrl)
+        return entry
 
     def save_upload(self, entry_id: str, filename: str, content: bytes) -> str:
         suffix = Path(filename).suffix or ".bin"
@@ -99,7 +101,7 @@ class LocalStore:
         relative = path.relative_to(self.settings.media_mount_dir)
         local_url = f"/media/{relative.as_posix()}"
         if not self.settings.s3_media_enabled:
-            return local_url
+            return self._absolutize_url(local_url) or local_url
 
         key = self._s3_key(relative)
         try:
@@ -181,6 +183,16 @@ class LocalStore:
             return content_type
         return "application/octet-stream"
 
+    def _absolutize_url(self, url: str | None) -> str | None:
+        if not url:
+            return url
+        if url.startswith(("http://", "https://")):
+            return url
+        base_url = self.settings.public_api_base_url
+        if base_url and url.startswith("/"):
+            return f"{base_url.rstrip('/')}{url}"
+        return url
+
     def _s3_key(self, relative_path: Path) -> str:
         prefix = self.settings.media_s3_prefix.strip("/")
         relative = relative_path.as_posix().lstrip("/")
@@ -241,5 +253,28 @@ class LocalStore:
                 video_director["scenarioText"] = "\n".join(scenario_lines) or "시나리오를 다시 생성해 주세요."
             else:
                 video_director["scenarioText"] = "시나리오를 다시 생성해 주세요."
+
+        scene_visual = payload.get("sceneVisual")
+        if isinstance(scene_visual, dict):
+            scene_visual["imageUrl"] = self._absolutize_url(scene_visual.get("imageUrl"))
+
+        narration = payload.get("narration")
+        if isinstance(narration, dict):
+            narration["audioUrl"] = self._absolutize_url(narration.get("audioUrl"))
+
+        media = payload.get("media")
+        if isinstance(media, dict):
+            for key in ("posterUrl", "videoUrl", "thumbnailUrl", "soraRequestUrl", "soraVideoUrl"):
+                media[key] = self._absolutize_url(media.get(key))
+            media["storyboardUrls"] = [
+                self._absolutize_url(item) or item
+                for item in media.get("storyboardUrls", [])
+                if isinstance(item, str)
+            ]
+            media["generatedStoryboardUrls"] = [
+                self._absolutize_url(item) or item
+                for item in media.get("generatedStoryboardUrls", [])
+                if isinstance(item, str)
+            ]
 
         return payload
