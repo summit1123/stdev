@@ -602,15 +602,18 @@ class OpenAIService:
             return None
         return None
 
-    def synthesize_speech(self, script: str) -> bytes | None:
+    def synthesize_speech(self, script: str) -> tuple[bytes | None, str | None]:
         if not script.strip():
-            return None
+            return None, None
         provider = self.active_tts_provider
         prepared_script = self._prepare_tts_script(script)
         if provider == "elevenlabs":
-            return self._synthesize_with_elevenlabs(prepared_script)
+            audio = self._synthesize_with_elevenlabs(prepared_script)
+            if audio:
+                return audio, self.settings.elevenlabs_voice_label
+            provider = "openai"
         if not self.client:
-            return None
+            return None, None
         try:
             response = self.client.audio.speech.create(
                 model=self.settings.tts_model,
@@ -618,9 +621,9 @@ class OpenAIService:
                 input=prepared_script,
                 instructions=TTS_INSTRUCTIONS,
             )
-            return response.read()
+            return response.read(), self.settings.default_voice
         except Exception:
-            return None
+            return None, None
 
     def _synthesize_with_elevenlabs(self, script: str) -> bytes | None:
         if not self.settings.elevenlabs_api_key or not script.strip():
