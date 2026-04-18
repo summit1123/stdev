@@ -42,3 +42,58 @@ output "media_access_policy_arn" {
   description = "IAM policy ARN to attach to the API runtime role."
   value       = try(aws_iam_policy.media_rw[0].arn, null)
 }
+
+output "web_bucket_name" {
+  description = "Managed S3 bucket for the static web build."
+  value       = try(aws_s3_bucket.web[0].bucket, null)
+}
+
+output "web_distribution_id" {
+  description = "CloudFront distribution ID for the web app."
+  value       = try(aws_cloudfront_distribution.web[0].id, null)
+}
+
+output "web_distribution_domain_name" {
+  description = "CloudFront hostname for the web app."
+  value       = try(aws_cloudfront_distribution.web[0].domain_name, null)
+}
+
+output "web_url" {
+  description = "Primary public URL for the web app."
+  value       = local.web_url
+}
+
+output "api_ecr_repository_url" {
+  description = "ECR repository URL that stores the API image."
+  value       = try(local.api_image_repository_url, null)
+}
+
+output "api_service_id" {
+  description = "App Runner service ID for the API."
+  value       = try(aws_apprunner_service.api[0].service_id, null)
+}
+
+output "api_service_arn" {
+  description = "App Runner service ARN for the API."
+  value       = try(aws_apprunner_service.api[0].arn, null)
+}
+
+output "api_service_url" {
+  description = "App Runner default service URL."
+  value       = try("https://${aws_apprunner_service.api[0].service_url}", null)
+}
+
+output "api_url" {
+  description = "Primary public URL for the API."
+  value       = local.api_url
+}
+
+output "api_custom_domain_dns_target" {
+  description = "DNS target returned by the App Runner custom domain association."
+  value       = try(aws_apprunner_custom_domain_association.api[0].dns_target, null)
+}
+
+output "api_custom_domain_validation_records" {
+  description = "Certificate validation records for the App Runner custom domain."
+  value       = try(aws_apprunner_custom_domain_association.api[0].certificate_validation_records, null)
+}

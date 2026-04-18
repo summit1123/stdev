@@ -87,3 +87,64 @@ The deploy command can sit on top of this. A practical flow is:
 1. `./deploy.sh` builds and uploads the web bundle.
 2. The same script runs your API redeploy command.
 3. Terraform only runs when the deploy environment says it should.
+
+## Recommended AWS Deployment Shape
+
+The repository is now aligned around one repeatable AWS flow:
+
+- Web: S3 bucket + CloudFront distribution
+- API: ECR repository + App Runner service
+- Media: S3 bucket + IAM policy for runtime access
+- DNS: optional in Terraform, because Cloudflare can stay in front until
+  you decide to move public DNS ownership
+
+Terraform manages the infrastructure itself. `deploy.sh` handles the
+artifact push:
+
+1. `terraform apply` creates or updates S3, CloudFront, ECR, App Runner,
+   and the media bucket.
+2. `./deploy.sh` builds the web app and syncs it to the managed S3
+   bucket, then invalidates CloudFront.
+3. The same script builds the API Docker image, pushes it to ECR, and
+   optionally triggers `aws apprunner start-deployment`.
+
+## First Real Apply
+
+1. Copy the examples:
+
+```bash
+cp infra/service/backend.hcl.example infra/service/backend.hcl
+cp infra/service/terraform.tfvars.example infra/service/terraform.tfvars
+cp deploy.env.example deploy.env
+```
+
+2. Fill in:
+
+- the real Terraform state bucket/table in `backend.hcl`
+- the real ACM certificate ARN in `terraform.tfvars` if you want the web
+  domain attached directly to CloudFront
+- `api_runtime_secret_arns` with Secrets Manager ARNs for values such as
+  `OPENAI_API_KEY` and `ELEVENLABS_API_KEY`
+
+3. Initialize and review the plan:
+
+```bash
+terraform -chdir=infra/service init -backend-config=backend.hcl
+terraform -chdir=infra/service plan
+```
+
+4. Apply when the diff looks right:
+
+```bash
+terraform -chdir=infra/service apply
+```
+
+5. Then deploy code:
+
+```bash
+./deploy.sh
+```
+
+If Cloudflare stays as the public edge for now, leave
+`create_web_dns_record = false` and point the Cloudflare routes at the
+Terraform outputs instead of letting Route53 own the public hostname.

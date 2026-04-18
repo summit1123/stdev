@@ -19,8 +19,8 @@ Usage: ./deploy.sh [options]
 Options:
   --dry-run            Print commands without executing them.
   --skip-web           Skip web build and S3 sync.
-  --skip-api           Skip API deploy command.
-  --skip-infra         Skip Terraform step.
+  --skip-api           Skip API image push or custom API deploy command.
+  --skip-infra         Skip Terraform apply.
   --skip-healthcheck   Skip the final health check.
   --help               Show this message.
 
@@ -33,7 +33,14 @@ Environment variables:
                                       Optional CloudFront distribution to invalidate.
   DEPLOY_CLOUDFRONT_INVALIDATION_PATHS
                                       Space-separated invalidation paths. Default: /*
-  DEPLOY_API_DEPLOY_CMD               Command that redeploys the API runtime.
+  DEPLOY_API_DEPLOY_CMD               Optional custom command that redeploys the API runtime.
+  DEPLOY_API_ECR_REPOSITORY_URI       ECR repository URI for the API image.
+  DEPLOY_API_APP_RUNNER_SERVICE_ARN   Optional App Runner service ARN to trigger after push.
+  DEPLOY_API_IMAGE_TAG                Docker image tag. Default: current git short SHA or latest.
+  DEPLOY_API_DOCKERFILE               Dockerfile path. Default: apps/api/Dockerfile
+  DEPLOY_API_BUILD_CONTEXT            Docker build context. Default: apps/api
+  DEPLOY_API_LOCAL_IMAGE_NAME         Local temporary image name. Default: kwail-api
+  DEPLOY_API_START_DEPLOYMENT         Set to 1 to call aws apprunner start-deployment after push.
   DEPLOY_RUN_TERRAFORM                Set to 1 to run Terraform apply.
   DEPLOY_TERRAFORM_DIR                Terraform root. Default: infra/service
   DEPLOY_TERRAFORM_INIT               Set to 1 to run terraform init before apply.
@@ -106,6 +113,17 @@ DEPLOY_TERRAFORM_INIT="${DEPLOY_TERRAFORM_INIT:-0}"
 DEPLOY_TERRAFORM_INIT_ARGS="${DEPLOY_TERRAFORM_INIT_ARGS:-}"
 DEPLOY_TERRAFORM_APPLY_ARGS="${DEPLOY_TERRAFORM_APPLY_ARGS:--auto-approve}"
 DEPLOY_RUN_TERRAFORM="${DEPLOY_RUN_TERRAFORM:-0}"
+DEPLOY_API_DOCKERFILE="${DEPLOY_API_DOCKERFILE:-apps/api/Dockerfile}"
+DEPLOY_API_BUILD_CONTEXT="${DEPLOY_API_BUILD_CONTEXT:-apps/api}"
+DEPLOY_API_LOCAL_IMAGE_NAME="${DEPLOY_API_LOCAL_IMAGE_NAME:-kwail-api}"
+DEPLOY_API_START_DEPLOYMENT="${DEPLOY_API_START_DEPLOYMENT:-1}"
+
+if git -C "${ROOT_DIR}" rev-parse --short HEAD >/dev/null 2>&1; then
+  GIT_SHA="$(git -C "${ROOT_DIR}" rev-parse --short HEAD)"
+else
+  GIT_SHA="latest"
+fi
+DEPLOY_API_IMAGE_TAG="${DEPLOY_API_IMAGE_TAG:-${GIT_SHA}}"
 
 log_step() {
   printf '\n==> %s\n' "$1"
@@ -118,6 +136,22 @@ run_cmd() {
     return 0
   fi
   bash -lc "cd \"${ROOT_DIR}\" && ${cmd}"
+}
+
+terraform_output_raw() {
+  local output_name="$1"
+  if [[ ! -d "${ROOT_DIR}/${DEPLOY_TERRAFORM_DIR}" ]]; then
+    return 0
+  fi
+  terraform -chdir="${ROOT_DIR}/${DEPLOY_TERRAFORM_DIR}" output -raw "${output_name}" 2>/dev/null || true
+}
+
+hydrate_deploy_targets() {
+  DEPLOY_WEB_S3_BUCKET="${DEPLOY_WEB_S3_BUCKET:-$(terraform_output_raw web_bucket_name)}"
+  DEPLOY_WEB_CLOUDFRONT_DISTRIBUTION_ID="${DEPLOY_WEB_CLOUDFRONT_DISTRIBUTION_ID:-$(terraform_output_raw web_distribution_id)}"
+  DEPLOY_API_ECR_REPOSITORY_URI="${DEPLOY_API_ECR_REPOSITORY_URI:-$(terraform_output_raw api_ecr_repository_url)}"
+  DEPLOY_API_APP_RUNNER_SERVICE_ARN="${DEPLOY_API_APP_RUNNER_SERVICE_ARN:-$(terraform_output_raw api_service_arn)}"
+  DEPLOY_HEALTHCHECK_URL="${DEPLOY_HEALTHCHECK_URL:-$(terraform_output_raw api_url)}"
 }
 
 trim_slashes() {
@@ -137,6 +171,21 @@ join_s3_path() {
     printf 's3://%s' "${bucket}"
   fi
 }
+
+if [[ "${RUN_INFRA}" -eq 1 && "${DEPLOY_RUN_TERRAFORM}" == "1" ]]; then
+  if [[ "${DEPLOY_TERRAFORM_INIT}" == "1" ]]; then
+    log_step "Terraform init"
+    run_cmd "terraform -chdir=\"${DEPLOY_TERRAFORM_DIR}\" init ${DEPLOY_TERRAFORM_INIT_ARGS}"
+  fi
+
+  log_step "Terraform apply"
+  run_cmd "terraform -chdir=\"${DEPLOY_TERRAFORM_DIR}\" apply ${DEPLOY_TERRAFORM_APPLY_ARGS}"
+elif [[ "${RUN_INFRA}" -eq 1 ]]; then
+  log_step "Terraform apply"
+  echo "Skipping Terraform because DEPLOY_RUN_TERRAFORM is not set to 1."
+fi
+
+hydrate_deploy_targets
 
 if [[ "${RUN_WEB}" -eq 1 ]]; then
   if [[ -z "${DEPLOY_WEB_S3_BUCKET:-}" ]]; then
@@ -158,26 +207,26 @@ if [[ "${RUN_WEB}" -eq 1 ]]; then
 fi
 
 if [[ "${RUN_API}" -eq 1 ]]; then
+  log_step "Deploy API"
   if [[ -n "${DEPLOY_API_DEPLOY_CMD:-}" ]]; then
-    log_step "Deploy API"
     run_cmd "${DEPLOY_API_DEPLOY_CMD}"
+  elif [[ -n "${DEPLOY_API_ECR_REPOSITORY_URI:-}" ]]; then
+    API_AWS_REGION="${DEPLOY_AWS_REGION:-${AWS_REGION:-${AWS_DEFAULT_REGION:-ap-northeast-2}}}"
+    API_ECR_REGISTRY="${DEPLOY_API_ECR_REPOSITORY_URI%%/*}"
+    API_LOCAL_IMAGE_REF="${DEPLOY_API_LOCAL_IMAGE_NAME}:${DEPLOY_API_IMAGE_TAG}"
+    API_REMOTE_IMAGE_REF="${DEPLOY_API_ECR_REPOSITORY_URI}:${DEPLOY_API_IMAGE_TAG}"
+
+    run_cmd "aws ecr get-login-password --region \"${API_AWS_REGION}\" | docker login --username AWS --password-stdin \"${API_ECR_REGISTRY}\""
+    run_cmd "docker build -f \"${DEPLOY_API_DOCKERFILE}\" -t \"${API_LOCAL_IMAGE_REF}\" \"${DEPLOY_API_BUILD_CONTEXT}\""
+    run_cmd "docker tag \"${API_LOCAL_IMAGE_REF}\" \"${API_REMOTE_IMAGE_REF}\""
+    run_cmd "docker push \"${API_REMOTE_IMAGE_REF}\""
+
+    if [[ "${DEPLOY_API_START_DEPLOYMENT}" == "1" && -n "${DEPLOY_API_APP_RUNNER_SERVICE_ARN:-}" ]]; then
+      run_cmd "aws apprunner start-deployment --service-arn \"${DEPLOY_API_APP_RUNNER_SERVICE_ARN}\""
+    fi
   else
-    log_step "Deploy API"
-    echo "Skipping API deploy because DEPLOY_API_DEPLOY_CMD is not set."
+    echo "Skipping API deploy because neither DEPLOY_API_DEPLOY_CMD nor DEPLOY_API_ECR_REPOSITORY_URI is set."
   fi
-fi
-
-if [[ "${RUN_INFRA}" -eq 1 && "${DEPLOY_RUN_TERRAFORM}" == "1" ]]; then
-  if [[ "${DEPLOY_TERRAFORM_INIT}" == "1" ]]; then
-    log_step "Terraform init"
-    run_cmd "terraform -chdir=\"${DEPLOY_TERRAFORM_DIR}\" init ${DEPLOY_TERRAFORM_INIT_ARGS}"
-  fi
-
-  log_step "Terraform apply"
-  run_cmd "terraform -chdir=\"${DEPLOY_TERRAFORM_DIR}\" apply ${DEPLOY_TERRAFORM_APPLY_ARGS}"
-elif [[ "${RUN_INFRA}" -eq 1 ]]; then
-  log_step "Terraform apply"
-  echo "Skipping Terraform because DEPLOY_RUN_TERRAFORM is not set to 1."
 fi
 
 if [[ "${RUN_HEALTHCHECK}" -eq 1 ]]; then

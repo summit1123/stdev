@@ -1,19 +1,34 @@
-project_name     = "diary-to-discovery"
+project_name     = "kwail"
 environment      = "hackathon"
 aws_region       = "ap-northeast-2"
 aws_profile      = null
 hosted_zone_name = "summit1123.co.kr"
-web_domain       = "app.summit1123.co.kr"
-api_domain       = "api.summit1123.co.kr"
+web_domain       = "diary-app.summit1123.co.kr"
+api_domain       = "diary-api.summit1123.co.kr"
+web_acm_certificate_arn = null
+
+create_web_bucket     = true
+create_web_cdn        = true
+create_web_dns_record = false
+
 create_media_bucket            = true
-media_bucket_name              = "diary-to-discovery-hackathon-media"
+media_bucket_name              = "kwail-hackathon-media"
 media_bucket_public_read_enabled = true
 media_bucket_force_destroy     = false
 media_bucket_expiration_days   = 30
 media_bucket_cors_allowed_origins = [
-  "https://app.summit1123.co.kr",
   "https://diary-app.summit1123.co.kr",
 ]
+
+create_api_ecr_repository = true
+create_api_service        = true
+create_api_custom_domain  = false
+api_image_tag             = "latest"
+
+api_runtime_secret_arns = {
+  OPENAI_API_KEY     = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:replace-openai"
+  ELEVENLABS_API_KEY = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:replace-elevenlabs"
+}
 
 app_tags = {
   Team  = "hackathon"
