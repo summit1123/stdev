@@ -1,4 +1,4 @@
-# Diary to Discovery API
+# kwail API
 
 ```bash
 uv sync

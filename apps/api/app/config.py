@@ -17,7 +17,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Diary to Discovery API"
+    app_name: str = "kwail API"
     app_env: str = "development"
     cors_origin: str = "http://localhost:4173"
     data_dir: Path = Field(default_factory=lambda: PROJECT_ROOT / "data")

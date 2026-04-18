@@ -1,1 +1,1 @@
-"""Diary to Discovery API package."""
+"""kwail API package."""

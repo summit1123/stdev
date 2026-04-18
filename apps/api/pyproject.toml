@@ -1,7 +1,7 @@
 [project]
 name = "diary-to-discovery-api"
 version = "0.1.0"
-description = "FastAPI backend for Diary to Discovery"
+description = "FastAPI backend for kwail"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
