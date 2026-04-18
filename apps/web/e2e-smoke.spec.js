@@ -36,7 +36,7 @@ test('upload to library flow works end to end', async ({ page }) => {
   })
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' })
-  await expect(page.getByRole('heading', { name: '오늘의 장면을 내일의 관찰로 바꿉니다.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '아이들이 세상을 이해하는 방식을 바꿉니다' })).toBeVisible()
   await page.screenshot({ path: path.join(artifactsDir, '01-home.png'), fullPage: true })
 
   await page.getByRole('button', { name: '일기 올리고 시작하기' }).click()
@@ -47,13 +47,14 @@ test('upload to library flow works end to end', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(imagePath)
 
   const editor = page.locator('textarea.editor-textarea')
+  await page.waitForURL(/#\/studio\/ocr/, { timeout: 60000 })
   await expect(editor).toBeVisible({ timeout: 60000 })
   await expect.poll(async () => (await editor.inputValue()).trim().length, { timeout: 60000 }).toBeGreaterThan(0)
   await page.screenshot({ path: path.join(artifactsDir, '03-ocr.png'), fullPage: true })
 
-  await page.getByRole('button', { name: '다음: 결과 만들기' }).click()
+  await page.getByRole('button', { name: '탐구 결과 만들기' }).click()
   await page.waitForURL(/#\/studio\/results/)
-  await expect(page.getByText('과학 해석 영상')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '오늘의 장면을 과학 질문으로 바꿨습니다' })).toBeVisible()
 
   await expect
     .poll(async () => {
@@ -70,6 +71,24 @@ test('upload to library flow works end to end', async ({ page }) => {
     .toBeGreaterThanOrEqual(2)
   await page.screenshot({ path: path.join(artifactsDir, '04-results.png'), fullPage: true })
 
+  await page.locator('.result-scene-card-button').first().click()
+  await expect(page.getByRole('heading', { name: '현상 요약 더 묻기' })).toBeVisible()
+  const initialAssistantBubbleCount = await page.locator('.card-chat-bubble.assistant').count()
+  await page.locator('.card-chat-form textarea').fill('안녕')
+  await page.getByRole('button', { name: '질문 보내기' }).click()
+  await expect
+    .poll(async () => await page.locator('.card-chat-bubble.assistant').count(), { timeout: 30000 })
+    .toBeGreaterThan(initialAssistantBubbleCount)
+  await expect(page.locator('.card-chat-bubble.loading')).toHaveCount(0, { timeout: 30000 })
+  await expect
+    .poll(async () => await page.locator('.card-chat-bubble.assistant').last().textContent(), { timeout: 30000 })
+    .not.toContain('Not Found')
+  await expect
+    .poll(async () => await page.locator('.card-chat-bubble.assistant').last().textContent(), { timeout: 30000 })
+    .not.toContain('지금은 답을 불러오지 못했어요')
+  await page.locator('.card-chat-close').click()
+  await expect.poll(async () => await page.locator('.card-chat-overlay').count(), { timeout: 10000 }).toBe(0)
+
   await page.locator('.quiz-choice').first().click()
   await page.getByRole('button', { name: '정답 확인' }).click()
   await expect(page.locator('.challenge-feedback')).toBeVisible()
@@ -80,7 +99,7 @@ test('upload to library flow works end to end', async ({ page }) => {
   await page.getByRole('button', { name: '관찰 로그 저장' }).click()
   await expect(page.getByText('버찌를 떨어뜨리는 높이를 바꾸면')).toBeVisible({ timeout: 15000 })
 
-  await page.getByRole('button', { name: '다음: 보관함' }).click()
+  await page.getByRole('button', { name: '다음 단계' }).click()
   await page.waitForURL(/#\/studio\/library/)
   await expect(page.getByText('최근 결과')).toBeVisible()
   await page.screenshot({ path: path.join(artifactsDir, '05-library.png'), fullPage: true })

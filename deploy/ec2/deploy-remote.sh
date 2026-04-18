@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SHARED_DIR="${KWAIL_SHARED_DIR:-/opt/kwail/shared}"
 PROJECT_DIR="${KWAIL_PROJECT_ROOT:-/opt/kwail/app}"
 DEPLOY_ENV_FILE="${SHARED_DIR}/deploy.env"
+DEFAULT_ELEVENLABS_VOICE_ID="Xb7hH8MSUJpSbSDYk0k2"
+DEFAULT_ELEVENLABS_VOICE_LABEL="Alice"
 
 if [[ -f "${DEPLOY_ENV_FILE}" ]]; then
   set -a
@@ -14,16 +16,30 @@ if [[ -f "${DEPLOY_ENV_FILE}" ]]; then
   set +a
 fi
 
-if [[ -n "${API_DOMAIN:-}" ]]; then
+upsert_runtime_env() {
+  local key="$1"
+  local value="$2"
+  local target="${SHARED_DIR}/runtime.env"
+
   mkdir -p "${SHARED_DIR}"
-  touch "${SHARED_DIR}/runtime.env"
-  if grep -q '^PUBLIC_API_BASE_URL=' "${SHARED_DIR}/runtime.env"; then
-    sed -i.bak "s#^PUBLIC_API_BASE_URL=.*#PUBLIC_API_BASE_URL=https://${API_DOMAIN}#" "${SHARED_DIR}/runtime.env"
+  touch "${target}"
+
+  if grep -q "^${key}=" "${target}"; then
+    sed -i.bak "s#^${key}=.*#${key}=${value}#" "${target}"
   else
-    printf 'PUBLIC_API_BASE_URL=https://%s\n' "${API_DOMAIN}" >> "${SHARED_DIR}/runtime.env"
+    printf '%s=%s\n' "${key}" "${value}" >> "${target}"
   fi
-  rm -f "${SHARED_DIR}/runtime.env.bak"
+
+  rm -f "${target}.bak"
+}
+
+if [[ -n "${API_DOMAIN:-}" ]]; then
+  upsert_runtime_env "PUBLIC_API_BASE_URL" "https://${API_DOMAIN}"
 fi
+
+upsert_runtime_env "TTS_PROVIDER" "elevenlabs"
+upsert_runtime_env "ELEVENLABS_VOICE_ID" "${ELEVENLABS_VOICE_ID:-${DEFAULT_ELEVENLABS_VOICE_ID}}"
+upsert_runtime_env "ELEVENLABS_VOICE_LABEL" "${ELEVENLABS_VOICE_LABEL:-${DEFAULT_ELEVENLABS_VOICE_LABEL}}"
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {

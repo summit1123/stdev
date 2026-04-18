@@ -38,6 +38,9 @@ locals {
       ? local.media_public_base_url
       : ""
     )
+    TTS_PROVIDER           = "elevenlabs"
+    ELEVENLABS_VOICE_ID    = "Xb7hH8MSUJpSbSDYk0k2"
+    ELEVENLABS_VOICE_LABEL = "Alice"
   }
   api_runtime_environment = {
     for key, value in merge(local.api_runtime_environment_default, var.api_runtime_environment) :
@@ -59,6 +62,8 @@ locals {
     MEDIA_S3_PREFIX          = "media"
     MEDIA_S3_PUBLIC_BASE_URL = local.media_public_base_url != null ? local.media_public_base_url : ""
     TTS_PROVIDER             = "elevenlabs"
+    ELEVENLABS_VOICE_ID      = "Xb7hH8MSUJpSbSDYk0k2"
+    ELEVENLABS_VOICE_LABEL   = "Alice"
     KWAIL_PROJECT_ROOT       = "${var.ec2_project_root}/app"
   }
   ec2_public_ip = try(aws_eip.runtime[0].public_ip, aws_instance.runtime[0].public_ip, null)
