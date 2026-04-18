@@ -18,6 +18,8 @@ function inferHostedApiBase(): string | null {
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? inferHostedApiBase() ?? 'http://localhost:8000'
+const BRAND_NAME = 'kwail'
+const BRAND_LOGO = '/branding/kwail-banana-logo.png'
 
 type EntryStatus =
   | 'created'
@@ -753,10 +755,10 @@ function App() {
                 window.scrollTo({ top: 0, behavior: 'smooth' })
               }
             }}
-            aria-label="Diary to Discovery 홈 상단으로"
+            aria-label={`${BRAND_NAME} 홈 상단으로`}
           >
-            <span>D</span>
-            <strong>Diary to Discovery</strong>
+            <img src={BRAND_LOGO} alt="" aria-hidden="true" decoding="async" />
+            <strong>{BRAND_NAME}</strong>
           </button>
           <div className="home-nav-actions">
             {latestEntry ? (
@@ -858,16 +860,16 @@ function App() {
   return (
     <main className="app-shell">
       <div className="studio-topbar">
-        <button type="button" className="studio-brand" onClick={() => navigateToView('home')} aria-label="Diary to Discovery 홈으로">
-          <span>D</span>
-          <strong>Diary to Discovery</strong>
+        <button type="button" className="studio-brand" onClick={() => navigateToView('home')} aria-label={`${BRAND_NAME} 홈으로`}>
+          <img src={BRAND_LOGO} alt="" aria-hidden="true" decoding="async" />
+          <strong>{BRAND_NAME}</strong>
         </button>
         <span>작업 화면</span>
       </div>
 
       <section className="workspace-header">
         <div className="workspace-title">
-          <p className="section-kicker">Diary to Discovery</p>
+          <p className="section-kicker">{BRAND_NAME}</p>
           <h1>
             한 번에 몰아놓지 않고, 단계별로
             <br />
@@ -1477,38 +1479,40 @@ function App() {
                       </form>
                     </section>
 
-                    <section className="content-panel result-log-panel">
-                      <div className="section-head compact">
-                        <div>
-                          <p className="section-kicker">관찰 로그</p>
-                          <h2>내일 다시 이어서 보기</h2>
+                    <div className="result-followup-stack">
+                      <section className="content-panel result-log-panel">
+                        <div className="section-head compact">
+                          <div>
+                            <p className="section-kicker">관찰 로그</p>
+                            <h2>내일 다시 이어서 보기</h2>
+                          </div>
                         </div>
-                      </div>
-                      <div className="mission-log-list">
-                        {missionLogs.length ? (
-                          missionLogs.map((log) => (
-                            <article key={log.id} className="mission-log-item">
-                              <strong>{formatDate(log.createdAt)}</strong>
-                              <p>{log.observationData}</p>
-                              <span>{log.reflection}</span>
-                            </article>
-                          ))
-                        ) : (
-                          <div className="log-empty">아직 저장된 관찰 로그가 없습니다.</div>
-                        )}
-                      </div>
-                    </section>
+                        <div className="mission-log-list">
+                          {missionLogs.length ? (
+                            missionLogs.map((log) => (
+                              <article key={log.id} className="mission-log-item">
+                                <strong>{formatDate(log.createdAt)}</strong>
+                                <p>{log.observationData}</p>
+                                <span>{log.reflection}</span>
+                              </article>
+                            ))
+                          ) : (
+                            <div className="log-empty">아직 저장된 관찰 로그가 없습니다.</div>
+                          )}
+                        </div>
+                      </section>
 
-                    <section className="content-panel result-scenario-panel">
-                      <div className="section-head compact">
-                        <div>
-                          <p className="section-kicker">Scenario</p>
-                          <h2>{result.videoDirector.title}</h2>
+                      <section className="content-panel result-scenario-panel">
+                        <div className="section-head compact">
+                          <div>
+                            <p className="section-kicker">Scenario</p>
+                            <h2>{result.videoDirector.title}</h2>
+                          </div>
+                          <span>{result.media.videoModel ?? 'storyboard-mix'}</span>
                         </div>
-                        <span>{result.media.videoModel ?? 'storyboard-mix'}</span>
-                      </div>
-                      <pre className="scenario-text">{result.videoDirector.scenarioText}</pre>
-                    </section>
+                        <pre className="scenario-text">{result.videoDirector.scenarioText}</pre>
+                      </section>
+                    </div>
                   </div>
                 </>
               ) : (
