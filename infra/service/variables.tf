@@ -44,3 +44,51 @@ variable "app_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "create_media_bucket" {
+  description = "Whether Terraform should manage the app media bucket."
+  type        = bool
+  default     = true
+}
+
+variable "media_bucket_name" {
+  description = "Optional explicit S3 bucket name for uploaded and generated media."
+  type        = string
+  default     = null
+}
+
+variable "media_bucket_force_destroy" {
+  description = "Allow Terraform to destroy the media bucket even when it contains objects."
+  type        = bool
+  default     = false
+}
+
+variable "media_bucket_public_read_enabled" {
+  description = "Allow direct public GET access to objects when using raw S3 URLs."
+  type        = bool
+  default     = false
+}
+
+variable "media_bucket_expiration_days" {
+  description = "Optional lifecycle expiration for media objects."
+  type        = number
+  default     = null
+}
+
+variable "media_bucket_cors_allowed_origins" {
+  description = "Origins allowed to read media directly from S3."
+  type        = list(string)
+  default     = []
+}
+
+variable "media_bucket_cors_allowed_methods" {
+  description = "HTTP methods allowed by the media bucket CORS rule."
+  type        = list(string)
+  default     = ["GET", "HEAD"]
+}
+
+variable "create_media_access_policy" {
+  description = "Whether Terraform should create a reusable IAM policy for media read/write access."
+  type        = bool
+  default     = true
+}

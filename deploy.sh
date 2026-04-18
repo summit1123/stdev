@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_ENV_FILE="${ROOT_DIR}/.env"
+DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-${ROOT_DIR}/deploy.env}"
+
+RUN_WEB=1
+RUN_API=1
+RUN_INFRA=1
+RUN_HEALTHCHECK=1
+DRY_RUN=0
+
+usage() {
+  cat <<'EOF'
+Usage: ./deploy.sh [options]
+
+Options:
+  --dry-run            Print commands without executing them.
+  --skip-web           Skip web build and S3 sync.
+  --skip-api           Skip API deploy command.
+  --skip-infra         Skip Terraform step.
+  --skip-healthcheck   Skip the final health check.
+  --help               Show this message.
+
+Environment variables:
+  DEPLOY_WEB_BUILD_CMD                Command to build the web app.
+  DEPLOY_WEB_DIST_DIR                 Directory to sync to S3.
+  DEPLOY_WEB_S3_BUCKET                Target S3 bucket for the web build.
+  DEPLOY_WEB_S3_PREFIX                Optional key prefix inside the web bucket.
+  DEPLOY_WEB_CLOUDFRONT_DISTRIBUTION_ID
+                                      Optional CloudFront distribution to invalidate.
+  DEPLOY_CLOUDFRONT_INVALIDATION_PATHS
+                                      Space-separated invalidation paths. Default: /*
+  DEPLOY_API_DEPLOY_CMD               Command that redeploys the API runtime.
+  DEPLOY_RUN_TERRAFORM                Set to 1 to run Terraform apply.
+  DEPLOY_TERRAFORM_DIR                Terraform root. Default: infra/service
+  DEPLOY_TERRAFORM_INIT               Set to 1 to run terraform init before apply.
+  DEPLOY_TERRAFORM_INIT_ARGS          Extra args for terraform init.
+  DEPLOY_TERRAFORM_APPLY_ARGS         Extra args for terraform apply.
+  DEPLOY_HEALTHCHECK_URL              Final URL to check with curl.
+  DEPLOY_AWS_PROFILE                  Optional AWS profile override.
+  DEPLOY_AWS_REGION                   Optional AWS region override.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=1
+      ;;
+    --skip-web)
+      RUN_WEB=0
+      ;;
+    --skip-api)
+      RUN_API=0
+      ;;
+    --skip-infra)
+      RUN_INFRA=0
+      ;;
+    --skip-healthcheck)
+      RUN_HEALTHCHECK=0
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+load_env_file() {
+  local file="$1"
+  if [[ -f "${file}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${file}"
+    set +a
+  fi
+}
+
+load_env_file "${APP_ENV_FILE}"
+load_env_file "${DEPLOY_ENV_FILE}"
+
+if [[ -n "${DEPLOY_AWS_PROFILE:-}" ]]; then
+  export AWS_PROFILE="${DEPLOY_AWS_PROFILE}"
+fi
+
+if [[ -n "${DEPLOY_AWS_REGION:-}" ]]; then
+  export AWS_REGION="${DEPLOY_AWS_REGION}"
+  export AWS_DEFAULT_REGION="${DEPLOY_AWS_REGION}"
+fi
+
+DEPLOY_WEB_BUILD_CMD="${DEPLOY_WEB_BUILD_CMD:-pnpm --dir apps/web build}"
+DEPLOY_WEB_DIST_DIR="${DEPLOY_WEB_DIST_DIR:-apps/web/dist}"
+DEPLOY_WEB_S3_PREFIX="${DEPLOY_WEB_S3_PREFIX:-}"
+DEPLOY_CLOUDFRONT_INVALIDATION_PATHS="${DEPLOY_CLOUDFRONT_INVALIDATION_PATHS:-/*}"
+DEPLOY_TERRAFORM_DIR="${DEPLOY_TERRAFORM_DIR:-infra/service}"
+DEPLOY_TERRAFORM_INIT="${DEPLOY_TERRAFORM_INIT:-0}"
+DEPLOY_TERRAFORM_INIT_ARGS="${DEPLOY_TERRAFORM_INIT_ARGS:-}"
+DEPLOY_TERRAFORM_APPLY_ARGS="${DEPLOY_TERRAFORM_APPLY_ARGS:--auto-approve}"
+DEPLOY_RUN_TERRAFORM="${DEPLOY_RUN_TERRAFORM:-0}"
+
+log_step() {
+  printf '\n==> %s\n' "$1"
+}
+
+run_cmd() {
+  local cmd="$1"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf '[dry-run] %s\n' "${cmd}"
+    return 0
+  fi
+  bash -lc "cd \"${ROOT_DIR}\" && ${cmd}"
+}
+
+trim_slashes() {
+  local value="$1"
+  value="${value#/}"
+  value="${value%/}"
+  printf '%s' "${value}"
+}
+
+join_s3_path() {
+  local bucket="$1"
+  local prefix
+  prefix="$(trim_slashes "$2")"
+  if [[ -n "${prefix}" ]]; then
+    printf 's3://%s/%s' "${bucket}" "${prefix}"
+  else
+    printf 's3://%s' "${bucket}"
+  fi
+}
+
+if [[ "${RUN_WEB}" -eq 1 ]]; then
+  if [[ -z "${DEPLOY_WEB_S3_BUCKET:-}" ]]; then
+    echo "DEPLOY_WEB_S3_BUCKET is required unless --skip-web is used." >&2
+    exit 1
+  fi
+
+  log_step "Build web"
+  run_cmd "${DEPLOY_WEB_BUILD_CMD}"
+
+  log_step "Sync web assets to S3"
+  WEB_S3_TARGET="$(join_s3_path "${DEPLOY_WEB_S3_BUCKET}" "${DEPLOY_WEB_S3_PREFIX}")"
+  run_cmd "aws s3 sync \"${DEPLOY_WEB_DIST_DIR}\" \"${WEB_S3_TARGET}\" --delete"
+
+  if [[ -n "${DEPLOY_WEB_CLOUDFRONT_DISTRIBUTION_ID:-}" ]]; then
+    log_step "Invalidate CloudFront"
+    run_cmd "aws cloudfront create-invalidation --distribution-id \"${DEPLOY_WEB_CLOUDFRONT_DISTRIBUTION_ID}\" --paths ${DEPLOY_CLOUDFRONT_INVALIDATION_PATHS}"
+  fi
+fi
+
+if [[ "${RUN_API}" -eq 1 ]]; then
+  if [[ -n "${DEPLOY_API_DEPLOY_CMD:-}" ]]; then
+    log_step "Deploy API"
+    run_cmd "${DEPLOY_API_DEPLOY_CMD}"
+  else
+    log_step "Deploy API"
+    echo "Skipping API deploy because DEPLOY_API_DEPLOY_CMD is not set."
+  fi
+fi
+
+if [[ "${RUN_INFRA}" -eq 1 && "${DEPLOY_RUN_TERRAFORM}" == "1" ]]; then
+  if [[ "${DEPLOY_TERRAFORM_INIT}" == "1" ]]; then
+    log_step "Terraform init"
+    run_cmd "terraform -chdir=\"${DEPLOY_TERRAFORM_DIR}\" init ${DEPLOY_TERRAFORM_INIT_ARGS}"
+  fi
+
+  log_step "Terraform apply"
+  run_cmd "terraform -chdir=\"${DEPLOY_TERRAFORM_DIR}\" apply ${DEPLOY_TERRAFORM_APPLY_ARGS}"
+elif [[ "${RUN_INFRA}" -eq 1 ]]; then
+  log_step "Terraform apply"
+  echo "Skipping Terraform because DEPLOY_RUN_TERRAFORM is not set to 1."
+fi
+
+if [[ "${RUN_HEALTHCHECK}" -eq 1 ]]; then
+  if [[ -n "${DEPLOY_HEALTHCHECK_URL:-}" ]]; then
+    log_step "Health check"
+    run_cmd "curl --fail --silent --show-error \"${DEPLOY_HEALTHCHECK_URL}\""
+  else
+    log_step "Health check"
+    echo "Skipping health check because DEPLOY_HEALTHCHECK_URL is not set."
+  fi
+fi
+
+printf '\nDeploy flow complete.\n'

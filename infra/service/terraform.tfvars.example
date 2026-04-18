@@ -5,6 +5,15 @@ aws_profile      = null
 hosted_zone_name = "summit1123.co.kr"
 web_domain       = "app.summit1123.co.kr"
 api_domain       = "api.summit1123.co.kr"
+create_media_bucket            = true
+media_bucket_name              = "diary-to-discovery-hackathon-media"
+media_bucket_public_read_enabled = true
+media_bucket_force_destroy     = false
+media_bucket_expiration_days   = 30
+media_bucket_cors_allowed_origins = [
+  "https://app.summit1123.co.kr",
+  "https://diary-app.summit1123.co.kr",
+]
 
 app_tags = {
   Team  = "hackathon"

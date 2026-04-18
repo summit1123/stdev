@@ -1,5 +1,6 @@
 locals {
-  name_prefix = "${var.project_name}-${var.environment}"
+  name_prefix       = "${var.project_name}-${var.environment}"
+  media_bucket_name = coalesce(var.media_bucket_name, "${local.name_prefix}-media")
 
   default_tags = merge(
     {

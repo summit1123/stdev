@@ -68,3 +68,49 @@ def test_list_entries_ignores_invalid_legacy_result(tmp_path) -> None:
     items = store.list_entries()
     assert len(items) == 1
     assert items[0].entryId == entry.id
+
+
+def test_save_upload_uses_local_media_url_by_default(tmp_path) -> None:
+    settings = get_settings().model_copy(update={"data_dir": tmp_path})
+    store = LocalStore(settings)
+    entry = store.create_entry("image")
+
+    url = store.save_upload(entry.id, "note.png", b"image-bytes")
+
+    assert url == f"/media/entries/{entry.id}/original.png"
+    assert store.original_upload_path(entry.id) == store.abs_media_path(entry.id, "original.png")
+
+
+def test_save_upload_uses_s3_url_when_enabled(tmp_path, monkeypatch) -> None:
+    settings = get_settings().model_copy(
+        update={
+            "data_dir": tmp_path,
+            "media_storage_backend": "s3",
+            "media_s3_bucket": "demo-bucket",
+            "media_s3_region": "ap-northeast-2",
+            "media_s3_prefix": "hackathon-media",
+        }
+    )
+    store = LocalStore(settings)
+    entry = store.create_entry("image")
+    uploads: list[tuple[str, str, str]] = []
+
+    monkeypatch.setattr(
+        store,
+        "_upload_local_file",
+        lambda path, key, content_type: uploads.append((path.name, key, content_type)),
+    )
+
+    url = store.save_upload(entry.id, "note.png", b"image-bytes")
+
+    assert url == (
+        f"https://demo-bucket.s3.ap-northeast-2.amazonaws.com/"
+        f"hackathon-media/entries/{entry.id}/original.png"
+    )
+    assert uploads == [
+        (
+            "original.png",
+            f"hackathon-media/entries/{entry.id}/original.png",
+            "image/png",
+        )
+    ]

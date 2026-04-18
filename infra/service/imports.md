@@ -43,16 +43,25 @@ not available in the current shell yet.
 
 ```bash
 terraform import aws_s3_bucket.media diary-to-discovery-media
+terraform import aws_s3_bucket_ownership_controls.media diary-to-discovery-media
+terraform import aws_s3_bucket_public_access_block.media diary-to-discovery-media
+terraform import aws_s3_bucket_server_side_encryption_configuration.media diary-to-discovery-media
+terraform import aws_s3_bucket_versioning.media diary-to-discovery-media
 ```
 
 Related resources are often separate in Terraform and may also need
 imports:
 
-- `aws_s3_bucket_versioning`
-- `aws_s3_bucket_public_access_block`
-- `aws_s3_bucket_server_side_encryption_configuration`
 - `aws_s3_bucket_policy`
 - `aws_s3_bucket_cors_configuration`
+- `aws_s3_bucket_lifecycle_configuration`
+
+If Terraform will create the bucket from scratch instead of importing it,
+the most useful first outputs are:
+
+- `media_bucket_name`
+- `media_bucket_public_base_url`
+- `media_access_policy_arn`
 
 ### CloudFront distribution
 

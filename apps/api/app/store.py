@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 from pathlib import Path
+from urllib.parse import quote
 
 from app.config import Settings
 from app.models import (
@@ -19,6 +21,7 @@ class LocalStore:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.settings.entries_dir.mkdir(parents=True, exist_ok=True)
+        self._s3_client = None
 
     def create_entry(self, input_type: str) -> DiaryEntryRecord:
         entry = DiaryEntryRecord(inputType=input_type)
@@ -54,12 +57,17 @@ class LocalStore:
     def save_upload(self, entry_id: str, filename: str, content: bytes) -> str:
         suffix = Path(filename).suffix or ".bin"
         stored_name = f"original{suffix}"
-        path = self.entry_dir(entry_id) / stored_name
-        path.write_bytes(content)
-        return f"/media/entries/{entry_id}/{stored_name}"
+        return self._write_media_bytes(entry_id, stored_name, content)
 
     def abs_media_path(self, entry_id: str, filename: str) -> Path:
         return self.entry_dir(entry_id) / filename
+
+    def original_upload_path(self, entry_id: str) -> Path | None:
+        entry_dir = self.entry_dir(entry_id)
+        for candidate in sorted(entry_dir.glob("original.*")):
+            if candidate.is_file():
+                return candidate
+        return None
 
     def save_result(self, entry_id: str, result: EntryResult) -> EntryResult:
         self.result_json_path(entry_id).write_text(
@@ -77,9 +85,7 @@ class LocalStore:
         return self.result_json_path(entry_id).exists()
 
     def save_audio(self, entry_id: str, content: bytes, filename: str = "narration.mp3") -> str:
-        path = self.entry_dir(entry_id) / filename
-        path.write_bytes(content)
-        return f"/media/entries/{entry_id}/{filename}"
+        return self._write_media_bytes(entry_id, filename, content)
 
     def save_generated_image(
         self,
@@ -87,9 +93,20 @@ class LocalStore:
         content: bytes,
         filename: str = "scene-visual.png",
     ) -> str:
-        path = self.entry_dir(entry_id) / filename
-        path.write_bytes(content)
-        return f"/media/entries/{entry_id}/{filename}"
+        return self._write_media_bytes(entry_id, filename, content)
+
+    def media_url_for_path(self, path: Path) -> str:
+        relative = path.relative_to(self.settings.media_mount_dir)
+        local_url = f"/media/{relative.as_posix()}"
+        if not self.settings.s3_media_enabled:
+            return local_url
+
+        key = self._s3_key(relative)
+        try:
+            self._upload_local_file(path, key, self._content_type_for_path(path))
+        except Exception:
+            return local_url
+        return self._public_url_for_key(key)
 
     def append_mission_log(self, entry_id: str, mission_log: MissionLog) -> MissionLog:
         existing = self.list_mission_logs(entry_id)
@@ -152,6 +169,56 @@ class LocalStore:
 
     def next_job_id(self) -> str:
         return new_id("job")
+
+    def _write_media_bytes(self, entry_id: str, filename: str, content: bytes) -> str:
+        path = self.entry_dir(entry_id) / filename
+        path.write_bytes(content)
+        return self.media_url_for_path(path)
+
+    def _content_type_for_path(self, path: Path) -> str:
+        content_type, _ = mimetypes.guess_type(path.name)
+        if content_type:
+            return content_type
+        return "application/octet-stream"
+
+    def _s3_key(self, relative_path: Path) -> str:
+        prefix = self.settings.media_s3_prefix.strip("/")
+        relative = relative_path.as_posix().lstrip("/")
+        if prefix:
+            return f"{prefix}/{relative}"
+        return relative
+
+    def _public_url_for_key(self, key: str) -> str:
+        base_url = self.settings.media_s3_public_base_url
+        if base_url:
+            return f"{base_url.rstrip('/')}/{quote(key, safe='/')}"
+
+        bucket = self.settings.media_s3_bucket
+        region = self.settings.media_s3_region
+        if not bucket:
+            raise ValueError("media_s3_bucket must be set when S3 media storage is enabled")
+        if region == "us-east-1":
+            return f"https://{bucket}.s3.amazonaws.com/{quote(key, safe='/')}"
+        return f"https://{bucket}.s3.{region}.amazonaws.com/{quote(key, safe='/')}"
+
+    def _upload_local_file(self, path: Path, key: str, content_type: str) -> None:
+        client = self._get_s3_client()
+        bucket = self.settings.media_s3_bucket
+        if not bucket:
+            raise ValueError("media_s3_bucket must be set when S3 media storage is enabled")
+        client.upload_file(
+            str(path),
+            bucket,
+            key,
+            ExtraArgs={"ContentType": content_type},
+        )
+
+    def _get_s3_client(self):
+        if self._s3_client is None:
+            import boto3
+
+            self._s3_client = boto3.client("s3", region_name=self.settings.media_s3_region)
+        return self._s3_client
 
     def _normalize_result_payload(self, payload: object) -> dict:
         if not isinstance(payload, dict):

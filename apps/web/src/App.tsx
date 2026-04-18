@@ -218,32 +218,32 @@ const statusMeta: Record<EntryStatus, { label: string; detail: string; progress:
     progress: 18,
   },
   queued: {
-    label: '생성 대기중',
-    detail: '서버에서 작업을 잡았고, 지금부터 상태를 계속 확인합니다.',
+    label: '생각을 정리하는 중이에요',
+    detail: '서버에서 작업을 잡았고, 지금부터 흐름에 맞춰 차례대로 준비합니다.',
     progress: 28,
   },
   parsing: {
-    label: '일기 해석 중',
+    label: '손글씨를 살펴보는 중이에요',
     detail: '손글씨와 장면 단서를 다시 읽고 있습니다.',
     progress: 42,
   },
   planning: {
-    label: '과학 질문 설계 중',
+    label: '질문을 고르는 중이에요',
     detail: '질문, 게임, 설명, 영상 시나리오를 함께 짜고 있습니다.',
     progress: 58,
   },
   rendering_image: {
-    label: '상황 이미지 생성 중',
+    label: '장면을 그려 보는 중이에요',
     detail: '일기 속 장면을 한 컷의 일러스트로 재구성하고 있습니다.',
     progress: 72,
   },
   rendering_audio: {
-    label: '최종 설명 정리 중',
+    label: '설명을 다듬는 중이에요',
     detail: '영상과 결과 카드를 맞추기 위해 최종 설명을 정리하고 있습니다.',
     progress: 82,
   },
   rendering_video: {
-    label: '24초 영상 믹싱 중',
+    label: '영상과 목소리를 맞추는 중이에요',
     detail: '장면 카드 영상과 내레이션을 합쳐 최종 결과를 정리하고 있습니다.',
     progress: 92,
   },
@@ -745,7 +745,19 @@ function App() {
     return (
       <main className="home-shell">
         <header className="home-nav">
-          <strong>Diary to Discovery</strong>
+          <button
+            type="button"
+            className="studio-brand"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }
+            }}
+            aria-label="Diary to Discovery 홈 상단으로"
+          >
+            <span>D</span>
+            <strong>Diary to Discovery</strong>
+          </button>
           <div className="home-nav-actions">
             {latestEntry ? (
               <button type="button" className="home-nav-link" onClick={() => void loadEntry(latestEntry.entryId)}>
@@ -761,16 +773,16 @@ function App() {
         <section className="home-hero">
           <div className="home-hero-media">
             <div className="home-hero-copy">
-              <p className="home-kicker">아이의 일기를 평가하지 않습니다</p>
+              <p className="home-kicker">과학과 수학을 ‘공부’가 아닌 ‘언어’로</p>
               <h1>
-                오늘의 장면을
+                아이들이 세상을
                 <br />
-                내일의 관찰로
+                이해하는 방식을
                 <br />
-                바꿉니다.
+                바꿉니다
               </h1>
               <p className="home-hero-body">
-                손글씨 일기를 읽고, 질문 3개와 실험 1개, 장면 이미지와 24초 과학 해석 영상까지 한 번에
+                손글씨 일기를 읽고, 질문과 실험, 장면 이미지와 설명 영상을 아이의 속도에 맞춰 차례대로
                 엮습니다.
               </p>
               <div className="home-hero-actions">
@@ -812,8 +824,10 @@ function App() {
             {homeModes.map((mode, index) => (
               <article key={mode.title} className={`home-mode-card tone-${index + 1}`}>
                 <img
-                  src={index === 0 ? '/landing/hero-story-02.png' : index === 1 ? '/landing/hero-story-01.png' : '/landing/hero-model.png'}
+                  src={index === 0 ? '/landing/hero-story-02.webp' : index === 1 ? '/landing/hero-story-01.webp' : '/landing/hero-model.webp'}
                   alt={mode.title}
+                  loading="lazy"
+                  decoding="async"
                 />
                 <div>
                   <strong>{mode.title}</strong>
@@ -847,8 +861,9 @@ function App() {
   return (
     <main className="app-shell">
       <div className="studio-topbar">
-        <button type="button" className="home-nav-link" onClick={() => navigateToView('home')}>
-          메인으로
+        <button type="button" className="studio-brand" onClick={() => navigateToView('home')} aria-label="Diary to Discovery 홈으로">
+          <span>D</span>
+          <strong>Diary to Discovery</strong>
         </button>
         <span>작업 화면</span>
       </div>
@@ -856,9 +871,15 @@ function App() {
       <section className="workspace-header">
         <div className="workspace-title">
           <p className="section-kicker">Diary to Discovery</p>
-          <h1>한 번에 몰아놓지 않고, 단계별로 따라갑니다.</h1>
+          <h1>
+            한 번에 몰아놓지 않고, 단계별로
+            <br />
+            따라갑니다.
+          </h1>
           <p className="workspace-summary">
-            먼저 올리고, 읽힌 내용을 고치고, 그다음 결과를 확인합니다. 필요할 때만 다음 깊이로 내려갑니다.
+            먼저 올리고, 읽힌 내용을 고치고, 그다음 결과를 확인합니다.
+            <br />
+            필요할 때만 다음 깊이로 내려갑니다.
           </p>
         </div>
 
@@ -950,11 +971,11 @@ function App() {
                   onDrop={(event) => void onFileDrop(event)}
                 >
                   <input ref={fileInputRef} type="file" accept="image/*" onChange={onFileChange} />
-                  <strong>{isUploading ? 'OpenAI가 손글씨를 읽는 중입니다' : '파일 선택 또는 드래그'}</strong>
+                  <strong>{isUploading ? 'AI가 손글씨를 살펴보는 중이에요' : '파일 선택 또는 드래그'}</strong>
                   <span>손글씨 이미지를 올리면 OCR 결과가 다음 단계에 바로 채워집니다.</span>
                   <div className="upload-actions">
                     <button type="button" className="primary-action" onClick={openFilePicker} disabled={isUploading}>
-                      {isUploading ? '업로드 중' : '일기 이미지 올리기'}
+                      {isUploading ? '생각 중...' : '일기 이미지 올리기'}
                     </button>
                   </div>
                 </div>
@@ -976,7 +997,7 @@ function App() {
 
                 <div className="page-nav-row page-nav-row-spread">
                   <button type="button" className="secondary-action" onClick={() => navigateToView('home')}>
-                    메인으로
+                    Diary 홈
                   </button>
                   <button
                     type="button"
@@ -997,7 +1018,12 @@ function App() {
                   </div>
                 </div>
                 {currentPoster ? (
-                  <img className="spotlight-image source-preview-image" src={currentPoster} alt="업로드 원본 미리보기" />
+                  <img
+                    className="spotlight-image source-preview-image"
+                    src={currentPoster}
+                    alt="업로드 원본 미리보기"
+                    decoding="async"
+                  />
                 ) : (
                   <div className="media-empty source-preview-empty">
                     <p>이미지를 올리면 여기에서 원본을 크게 확인할 수 있습니다.</p>
@@ -1040,7 +1066,12 @@ function App() {
                   </div>
                   <div className="ocr-reference-layout">
                     {currentPoster ? (
-                      <img className="spotlight-image ocr-reference-image" src={currentPoster} alt="OCR 원본 일기 이미지" />
+                      <img
+                        className="spotlight-image ocr-reference-image"
+                        src={currentPoster}
+                        alt="OCR 원본 일기 이미지"
+                        decoding="async"
+                      />
                     ) : (
                       <div className="media-empty">
                         <p>업로드한 원본 일기가 여기에 나타납니다.</p>
@@ -1118,7 +1149,7 @@ function App() {
                         <div className="generation-bubble bubble-a" />
                         <div className="generation-bubble bubble-b" />
                         <div className="generation-bubble bubble-c" />
-                        <img src="/loading/science-walker.png" alt="" aria-hidden="true" />
+                        <img src="/loading/science-walker.webp" alt="" aria-hidden="true" decoding="async" />
                       </div>
                       <div className="generation-track" aria-hidden="true">
                         <span />
@@ -1176,7 +1207,7 @@ function App() {
                     {localVideoUrl ? (
                       <video className="spotlight-video" controls playsInline poster={thumbnailUrl ?? undefined} src={localVideoUrl} />
                     ) : videoPreviewImage ? (
-                      <img className="spotlight-video" src={videoPreviewImage} alt="영상 준비 중 장면 미리보기" />
+                      <img className="spotlight-video" src={videoPreviewImage} alt="영상 준비 중 장면 미리보기" decoding="async" />
                     ) : (
                       <div className="media-empty">
                         <p>생성된 영상이 여기에 나타납니다.</p>
@@ -1208,7 +1239,7 @@ function App() {
                         <strong>이번 결과의 출발점</strong>
                       </div>
                       {currentPoster ? (
-                        <img className="spotlight-image" src={currentPoster} alt="원본 일기 이미지" />
+                        <img className="spotlight-image" src={currentPoster} alt="원본 일기 이미지" decoding="async" />
                       ) : (
                         <div className="media-empty">
                           <p>업로드한 원본 일기가 여기에 나타납니다.</p>
@@ -1226,7 +1257,7 @@ function App() {
                         <strong>{result.sceneVisual.title}</strong>
                       </div>
                       {sceneImage ? (
-                        <img className="spotlight-image" src={sceneImage} alt="일기 상황 재구성 이미지" />
+                        <img className="spotlight-image" src={sceneImage} alt="일기 상황 재구성 이미지" decoding="async" />
                       ) : (
                         <div className="media-empty">
                           <p>생성된 상황 이미지가 여기에 나타납니다.</p>
@@ -1287,7 +1318,7 @@ function App() {
 
                       <div className="challenge-media">
                         {sceneImage ? (
-                          <img src={sceneImage} alt="퀴즈 장면" className="challenge-image" />
+                          <img src={sceneImage} alt="퀴즈 장면" className="challenge-image" decoding="async" />
                         ) : (
                           <div className="media-empty">
                             <p>퀴즈용 장면 이미지가 여기에 나타납니다.</p>
@@ -1528,7 +1559,12 @@ function App() {
                   entries.map((entry) => (
                     <button key={entry.entryId} type="button" className="library-item" onClick={() => void loadEntry(entry.entryId)}>
                       {entry.posterUrl ? (
-                        <img src={resolveMediaUrl(entry.posterUrl) ?? undefined} alt={entry.summary ?? entry.entryId} />
+                        <img
+                          src={resolveMediaUrl(entry.posterUrl) ?? undefined}
+                          alt={entry.summary ?? entry.entryId}
+                          loading="lazy"
+                          decoding="async"
+                        />
                       ) : (
                         <div className="library-placeholder">ENTRY</div>
                       )}

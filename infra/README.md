@@ -67,3 +67,23 @@ Start with low-risk resources before touching IAM or shared networking:
 5. App Runner or ECS services
 6. ACM certificates
 7. Security groups, VPC, IAM last
+
+## Today's Fastest Path
+
+For the current app, the fastest stable move is:
+
+1. Keep the API container doing background OCR, image generation, and
+   ffmpeg mixing.
+2. Store uploaded and generated media in the Terraform-managed S3 bucket.
+3. Keep entry state and result JSON in the app store for now.
+4. Attach the generated media IAM policy to the API runtime role.
+
+If you use direct S3 URLs, enable public read on the bucket. If you put
+CloudFront in front later, keep the bucket private and point
+`MEDIA_S3_PUBLIC_BASE_URL` at the CDN domain instead.
+
+The deploy command can sit on top of this. A practical flow is:
+
+1. `./deploy.sh` builds and uploads the web bundle.
+2. The same script runs your API redeploy command.
+3. Terraform only runs when the deploy environment says it should.
