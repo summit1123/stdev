@@ -1,153 +1,71 @@
 # Terraform Management
 
-This repository uses a single Terraform stack for the hackathon phase.
+이 저장소는 해커톤 서비스 인프라를 `infra/service` 단일 Terraform 루트로 관리합니다.
 
-The goal is not to split frontend and backend right now. The goal is to
-bring the current AWS footprint under one repeatable management flow so
-that new changes stop living only in the AWS console.
+지금 기준의 실제 배포 모양은 아래와 같습니다.
 
-## What Terraform Means Here
+- EC2 1대
+- Elastic IP 1개
+- EC2 내부 Nginx + API 컨테이너
+- Cloudflare public hostname
+- SSM Parameter Store
+- 선택적 S3 미디어 버킷
 
-Terraform is the source of truth for AWS infrastructure changes:
+## 현재 운영 흐름
 
-- Git tracks what changed.
-- Terraform state tracks which real AWS resources belong to this code.
-- `terraform plan` shows what would change before anything is applied.
-
-For an existing AWS setup, Git alone is not enough. Existing resources
-must be imported into Terraform state before Terraform can manage them
-safely.
-
-## Hackathon Direction
-
-For today we keep one stack:
-
-- one repository
-- one service-level Terraform root
-- one remote state
-- logical grouping inside files only
-
-That keeps the management model small while still making later splits
-possible if the service grows.
-
-## Layout
-
-- `infra/service`: single Terraform root for the current service
-- `infra/service/imports.md`: import order and command patterns
-- `scripts/aws_inventory.sh`: quick AWS inventory helper
-
-## Quick Start
-
-1. Log in to AWS in the same shell you will use for Terraform.
-2. Run `bash scripts/aws_inventory.sh`.
-3. Copy `infra/service/backend.hcl.example` to `infra/service/backend.hcl`.
-4. Copy `infra/service/terraform.tfvars.example` to `infra/service/terraform.tfvars`.
-5. Fill in the real project, region, domain, and tag values.
-6. Run:
-
-```bash
-cd infra/service
-terraform init -backend-config=backend.hcl
-terraform plan
+```mermaid
+flowchart LR
+    TF["terraform apply"] --> EC2["EC2 + EIP + IAM + S3"]
+    DEPLOY["./deploy.sh"] --> SSM["SSM Parameter Store"]
+    DEPLOY --> CMD["SSM Run Command"]
+    CMD --> HOST["EC2 host"]
+    HOST --> BUILD["git pull + web build + api rebuild"]
+    CF["Cloudflare"] --> HOST
 ```
 
-At this point Terraform is initialized, but it still does not manage the
-existing AWS resources. Follow `infra/service/imports.md` to import them
-one by one, then keep running `terraform plan` until the remaining diff
-is understood.
+## 디렉터리
 
-## Suggested First Targets
+- `infra/service`: 현재 서비스용 Terraform 루트
+- `infra/service/imports.md`: 기존 리소스 import 순서
+- `scripts/aws_inventory.sh`: AWS 인벤토리 확인용 보조 스크립트
 
-Start with low-risk resources before touching IAM or shared networking:
-
-1. S3 buckets
-2. CloudFront distributions
-3. Route53 records
-4. ECR repositories
-5. App Runner or ECS services
-6. ACM certificates
-7. Security groups, VPC, IAM last
-
-## Today's Fastest Path
-
-For the current app, the fastest stable move is:
-
-1. Keep the API container doing background OCR, image generation, and
-   ffmpeg mixing.
-2. Store uploaded and generated media in the Terraform-managed S3 bucket.
-3. Keep entry state and result JSON in the app store for now.
-4. Attach the generated media IAM policy to the API runtime role.
-
-If you use direct S3 URLs, enable public read on the bucket. If you put
-CloudFront in front later, keep the bucket private and point
-`MEDIA_S3_PUBLIC_BASE_URL` at the CDN domain instead.
-
-The deploy command can sit on top of this. A practical flow is:
-
-1. `./deploy.sh` builds and uploads the web bundle.
-2. The same script runs your API redeploy command.
-3. Terraform only runs when the deploy environment says it should.
-
-## Recommended AWS Deployment Shape
-
-The repository is now aligned around one repeatable AWS flow:
-
-- Runtime: EC2 instance (`c7i.2xlarge` by default) + Docker Compose
-- Reverse proxy: Nginx on the EC2 host
-- Media: S3 bucket + IAM policy for runtime access
-- DNS: Cloudflare in front of the EC2 origin
-
-Terraform manages the infrastructure itself. `deploy.sh` handles the
-artifact push:
-
-1. `terraform apply` creates or updates the EC2 host, EIP, IAM, security
-   group, and the media bucket.
-2. `./deploy.sh` pushes the runtime secrets to SSM Parameter Store.
-3. The same script triggers an SSM Run Command on the instance.
-4. The instance pulls the latest repo, builds the web app, rebuilds the
-   API container, and brings `docker compose` back up.
-
-## First Real Apply
-
-1. Copy the examples:
+## 빠른 시작
 
 ```bash
 cp infra/service/backend.hcl.example infra/service/backend.hcl
 cp infra/service/terraform.tfvars.example infra/service/terraform.tfvars
-cp deploy.env.example deploy.env
 ```
-
-2. Fill in:
-
-- the real Terraform state bucket/table in `backend.hcl`
-- the real Cloudflare-facing domains in `terraform.tfvars`
-- any VPC/subnet overrides if you do not want the default VPC
-- `.env` locally with the real `OPENAI_API_KEY` and
-  `ELEVENLABS_API_KEY`
-
-3. Initialize and review the plan:
 
 ```bash
 terraform -chdir=infra/service init -backend-config=backend.hcl
 terraform -chdir=infra/service plan
-```
-
-4. Apply when the diff looks right:
-
-```bash
 terraform -chdir=infra/service apply
 ```
 
-5. Then deploy code:
+## 배포
+
+코드 배포는 Terraform과 분리해서 갑니다.
 
 ```bash
 ./deploy.sh
 ```
 
-6. Point Cloudflare DNS records at the Terraform output `ec2_public_ip`:
+필요하면 Terraform도 같이 돌릴 수 있습니다.
 
-- `diary-app.summit1123.co.kr` -> A record -> `ec2_public_ip`
-- `diary-api.summit1123.co.kr` -> A record -> `ec2_public_ip`
+```bash
+DEPLOY_RUN_TERRAFORM=1 ./deploy.sh
+```
 
-Keep Cloudflare proxied if you want the public hostname to stay stable
-while the origin remains plain HTTP on port 80.
+## 현재 공개 도메인
+
+- App: `https://diary-app.summit1123.co.kr`
+- API: `https://diary-api.summit1123.co.kr`
+
+Cloudflare에서는 두 호스트를 모두 같은 EC2 origin IP로 프록시합니다.
+
+## 운영 메모
+
+- API 컨테이너는 OCR, 이미지 생성, TTS, ffmpeg 믹싱을 담당합니다.
+- 웹은 EC2에서 빌드한 정적 파일을 Nginx가 서빙합니다.
+- 런타임 시크릿은 SSM에 저장하고, 배포 시 EC2에서 받아 씁니다.
+- 오래된 미디어도 EC2 공유 데이터 경로 또는 S3에서 다시 제공할 수 있게 맞춰 둡니다.

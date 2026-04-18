@@ -1,10 +1,7 @@
 # Submission Source
 
-This directory holds reviewer-facing Markdown source before packaging.
+이 디렉터리는 제출용 초안과 발표용 원고를 모아 두는 곳입니다.
 
-Recommended flow:
-
-1. Write the real content in `proposal.md`.
-2. Run `python3 scripts/review_submission_source.py docs/submissions/proposal.md`.
-3. Render with `python3 scripts/render_markdown_submission.py`.
-4. Run `python3 scripts/review_submission_pdf.py output/pdf/proposal.pdf` only as the final attachment check.
+- 실제 제출 문서는 `proposal.md`를 기준으로 수정합니다.
+- 별도 자동 패키징 스크립트는 제거했고, 필요하면 외부 문서 도구로 PDF를 만듭니다.
+- 제품 저장소의 기본 책임은 서비스 코드, 배포, 인프라 문서 유지입니다.
