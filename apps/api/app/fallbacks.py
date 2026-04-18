@@ -26,6 +26,30 @@ SAMPLE_TEXT_BY_STEM = {
     "sample-mosquito-night": "어젯밤 모기 때문에 잠을 설쳤다. 왜 어떤 날에는 모기가 더 많을까 궁금했다.",
 }
 
+MODE_CARD_COPY = {
+    "observe": GameModeCard(
+        id="observe",
+        title="탐정 모드",
+        hook='일기 속 어떤 장면에서든 "왜 그랬을까?"를 질문 삼아 과학 원리를 추리하는 모드',
+        mission='일기의 행동, 감각, 변화 중 하나를 골라 원인을 추적하는 단서에서 추리로 이어지는 흐름으로 구성합니다.',
+        reward="시나리오와 이미지, 영상도 단서와 원인 추리 흐름으로 이어집니다.",
+    ),
+    "experiment": GameModeCard(
+        id="experiment",
+        title="발명가 모드",
+        hook='일기 속 어떤 장면에서든 숨어있는 과학 원리를 꺼내 새로운 아이디어로 연결하는 모드',
+        mission='일기의 사물, 행동, 현상 중 하나를 골라 원리를 설명한 뒤 "이걸 응용하면?"으로 이어지는 흐름으로 구성합니다.',
+        reward="시나리오와 이미지, 영상도 원리 설명 뒤 응용 아이디어로 확장합니다.",
+    ),
+    "imagine": GameModeCard(
+        id="imagine",
+        title="탐험가 모드",
+        hook='일기 속 어떤 순간이든 처음 발견한 것처럼 낯설게 바라보며 과학을 찾아내는 모드',
+        mission='일기에서 당연하게 지나친 장면을 골라 "이게 왜 당연한 걸까?"라는 탐험 질문으로 바꿔 구성합니다.',
+        reward="시나리오와 이미지, 영상도 낯설게 다시 보는 탐험 흐름으로 이어집니다.",
+    ),
+}
+
 
 def _first_sentence(text: str) -> str:
     cleaned = " ".join(text.replace("\n", " ").split())
@@ -120,13 +144,13 @@ def fallback_result(
     questions = build_questions(topic)
     experiment = build_experiment(topic)
     scientific_interpretation = build_scientific_interpretation(topic, cleaned)
-    scene_visual = build_scene_visual(topic, cleaned)
-    science_game = build_science_game(topic)
+    recommended_mode_id = choose_mode(topic, preferred_mode_id)
+    scene_visual = build_scene_visual(topic, cleaned, recommended_mode_id)
+    science_game = build_science_game(topic, recommended_mode_id)
     science_quiz = build_science_quiz(topic)
     creative = build_creative(topic)
     narration_script = build_narration(topic, questions[0], experiment)
     game_modes = build_game_modes(topic)
-    recommended_mode_id = choose_mode(topic, preferred_mode_id)
     video_director = build_video_director(
         summary,
         questions,
@@ -328,8 +352,14 @@ def build_scientific_interpretation(topic: str, text: str) -> ScientificInterpre
     return mapping[topic]
 
 
-def build_scene_visual(topic: str, text: str) -> SceneVisual:
+def build_scene_visual(topic: str, text: str, recommended_mode_id: str) -> SceneVisual:
     first_line = _first_sentence(text)
+    mode_copy = MODE_CARD_COPY.get(recommended_mode_id, MODE_CARD_COPY["observe"])
+    mode_prompt = {
+        "observe": "Show clue-like evidence, traces, timing differences, and visible cause hints in the same frame.",
+        "experiment": "Show the hidden mechanism clearly and hint at a practical application or new idea in the same frame.",
+        "imagine": "Make the familiar moment feel newly discovered, slightly surprising, and full of hidden rules.",
+    }[recommended_mode_id]
     prompts = {
         "social": (
             "Premium Korean picture-book editorial illustration. Two Korean children in an elementary classroom or hallway "
@@ -358,23 +388,15 @@ def build_scene_visual(topic: str, text: str) -> SceneVisual:
             "warm light, notebook, stickers, clear gestures, no text, no watermark"
         ),
     }
-    captions = {
-        "social": "친한 사이의 말도 맥락과 반응을 함께 봐야 해.",
-        "weather": "날씨는 눈으로만 보지 않고 기분과 행동까지 함께 볼 수 있어.",
-        "animals": "반복해서 보면 작은 생물의 패턴이 드러나.",
-        "study": "준비 행동은 집중의 출발 신호가 될 수 있어.",
-        "family": "말투는 대화의 분위기를 바꾸는 중요한 단서야.",
-        "general": "같은 장면도 다시 보면 관찰 포인트가 생겨.",
-    }
     return SceneVisual(
-        title="일기 장면 재구성",
-        prompt=prompts[topic],
-        caption=f"{first_line}. {captions[topic]}",
+        title=mode_copy.title,
+        prompt=f"{prompts[topic]}. {mode_prompt}",
+        caption=f"{first_line}. {mode_copy.mission}",
         imageUrl=None,
     )
 
 
-def build_science_game(topic: str) -> ScienceGame:
+def build_science_game(topic: str, recommended_mode_id: str) -> ScienceGame:
     mapping = {
         "social": ScienceGame(
             title="반응 신호 탐정",
@@ -449,7 +471,33 @@ def build_science_game(topic: str) -> ScienceGame:
             aiGuide="AI는 단서가 왜 질문으로 이어지는지 설명한다.",
         ),
     }
-    return mapping[topic]
+    base = mapping[topic]
+    if recommended_mode_id == "experiment":
+        return base.model_copy(
+            update={
+                "title": f"발명가 모드: {base.title}",
+                "premise": "장면 속 원리를 꺼내 새 아이디어로 바꾸는 발명가 게임",
+                "goal": "원리를 설명한 뒤 어디에 응용할지 한 가지 아이디어로 연결하기",
+                "aiGuide": 'AI는 "이걸 응용하면?" 질문으로 다음 아이디어를 한 줄 던져 준다.',
+            }
+        )
+    if recommended_mode_id == "imagine":
+        return base.model_copy(
+            update={
+                "title": f"탐험가 모드: {base.title}",
+                "premise": "당연한 장면을 낯설게 다시 보며 숨은 규칙을 찾는 탐험 게임",
+                "goal": '익숙한 장면을 "이게 왜 당연한 걸까?" 질문으로 바꾸기',
+                "aiGuide": 'AI는 익숙한 장면을 낯설게 볼 수 있게 새로운 탐험 질문을 하나 더 붙여 준다.',
+            }
+        )
+    return base.model_copy(
+        update={
+            "title": f"탐정 모드: {base.title}",
+            "premise": "행동, 감각, 변화 단서를 모아 원인을 추리하는 탐정 게임",
+            "goal": '단서를 따라 "왜 그랬을까?"에 가장 가까운 설명을 고르기',
+            "aiGuide": 'AI는 어떤 단서가 가장 결정적이었는지 짚으며 추리 흐름을 정리해 준다.',
+        }
+    )
 
 
 def build_science_quiz(topic: str) -> ScienceQuiz:
@@ -583,62 +631,7 @@ def choose_mode(topic: str, preferred_mode_id: str) -> str:
 
 
 def build_game_modes(topic: str) -> list[GameModeCard]:
-    missions = {
-        "social": (
-            "표정과 반응 속도에서 관계 신호를 찾기",
-            "말투에 따른 반응 차이를 기록하기",
-            "우주학교의 배려 규칙을 상상해 보기",
-        ),
-        "weather": (
-            "하늘과 기분의 변화를 시간표처럼 적기",
-            "맑은 날과 비 오는 날의 활동 차이를 비교하기",
-            "구름 연구원이 되어 하늘 일기를 만들어 보기",
-        ),
-        "animals": (
-            "곤충이 보이는 시간과 장소의 단서를 모으기",
-            "빛이나 온도 조건에 따라 차이를 비교하기",
-            "개미 도시 과학자의 시점으로 다시 설명하기",
-        ),
-        "study": (
-            "집중이 시작되는 순간의 공통점을 찾기",
-            "준비 행동 유무에 따라 집중 시간을 비교하기",
-            "집중 탐정의 비밀 장비를 상상해 보기",
-        ),
-        "family": (
-            "대화가 편안했던 순간의 단서를 모으기",
-            "말투에 따라 반응이 달라지는지 비교하기",
-            "따뜻한 말의 연구소를 상상해 보기",
-        ),
-        "general": (
-            "오늘의 장면에서 처음 못 본 단서를 다시 찾기",
-            "같은 장면을 두 번 보고 차이를 비교하기",
-            "탐정 또는 우주 관찰자의 시점으로 이야기 만들기",
-        ),
-    }
-    observe_mission, experiment_mission, imagine_mission = missions[topic]
-    return [
-        GameModeCard(
-            id="observe",
-            title="관찰 탐정 모드",
-            hook="말보다 먼저 보이는 신호를 읽는 모드",
-            mission=observe_mission,
-            reward="관찰 배지와 단서 스티커를 모아요.",
-        ),
-        GameModeCard(
-            id="experiment",
-            title="실험 레인저 모드",
-            hook="질문을 짧은 기록 실험으로 바꾸는 모드",
-            mission=experiment_mission,
-            reward="실험 도장과 3일 연속 관찰 배지를 받아요.",
-        ),
-        GameModeCard(
-            id="imagine",
-            title="상상 항해사 모드",
-            hook="같은 질문을 다른 세계로 보내는 모드",
-            mission=imagine_mission,
-            reward="상상 카드와 세계 조각을 열어요.",
-        ),
-    ]
+    return [MODE_CARD_COPY["observe"], MODE_CARD_COPY["experiment"], MODE_CARD_COPY["imagine"]]
 
 
 def build_video_director(
@@ -648,10 +641,11 @@ def build_video_director(
     scientific_interpretation: ScientificInterpretation,
     recommended_mode_id: str,
 ) -> VideoDirector:
+    mode_copy = MODE_CARD_COPY.get(recommended_mode_id, MODE_CARD_COPY["observe"])
     mode_line = {
-        "observe": "quiet observational documentary rhythm",
-        "experiment": "crisp explainer rhythm with clear data cues",
-        "imagine": "editorial fantasy grounded in real observation",
+        "observe": "detective-style clue tracing rhythm",
+        "experiment": "inventor-style mechanism to application rhythm",
+        "imagine": "explorer-style rediscovery rhythm",
     }[recommended_mode_id]
     shots = [
         VideoShot(
@@ -708,17 +702,49 @@ def build_video_director(
     )
     scenario_text = "\n".join(
         [
-            f"1장면 0-3초: 일기 속 장면을 그대로 꺼낸다. {summary}",
-            f"2장면 3-6초: 장면을 과학자의 눈으로 다시 읽는다. {questions[0]}",
-            f"3장면 6-9초: 관찰 게임과 기록 실험이 시작된다. {experiment.title}",
-            f"4장면 9-12초: 내일 다시 돌아와 반응 신호를 적는다. {experiment.whatToWatch}",
+            (
+                f"1장면 0-3초: 일기 속 장면을 그대로 꺼내고, 가장 먼저 보이는 단서를 붙잡는다. {summary}"
+                if recommended_mode_id == "observe"
+                else (
+                    f"1장면 0-3초: 일기 장면 속에 숨어 있던 원리를 꺼내 발명의 재료처럼 바라본다. {summary}"
+                    if recommended_mode_id == "experiment"
+                    else f"1장면 0-3초: 익숙한 장면을 처음 본 것처럼 낯설게 멈춰 세운다. {summary}"
+                )
+            ),
+            (
+                f'2장면 3-6초: "왜 그랬을까?"를 묻고 원인 단서를 나눠 본다. {questions[0]}'
+                if recommended_mode_id == "observe"
+                else (
+                    f'2장면 3-6초: "이걸 응용하면?"을 묻고 핵심 원리를 골라 낸다. {questions[0]}'
+                    if recommended_mode_id == "experiment"
+                    else f'2장면 3-6초: "이게 왜 당연한 걸까?"를 묻고 숨은 규칙을 찾는다. {questions[0]}'
+                )
+            ),
+            (
+                f"3장면 6-9초: 단서 추리 게임과 기록 실험이 시작된다. {experiment.title}"
+                if recommended_mode_id == "observe"
+                else (
+                    f"3장면 6-9초: 원리를 작은 아이디어와 응용 장치로 바꿔 본다. {experiment.title}"
+                    if recommended_mode_id == "experiment"
+                    else f"3장면 6-9초: 낯설게 다시 본 장면을 탐험 질문과 실험으로 잇는다. {experiment.title}"
+                )
+            ),
+            (
+                f"4장면 9-12초: 내일 다시 돌아와 가장 결정적인 단서를 적는다. {experiment.whatToWatch}"
+                if recommended_mode_id == "observe"
+                else (
+                    f"4장면 9-12초: 내일 다시 돌아와 응용 아이디어가 실제로 맞는지 기록한다. {experiment.whatToWatch}"
+                    if recommended_mode_id == "experiment"
+                    else f"4장면 9-12초: 내일 다시 돌아와 당연했던 장면이 정말 같은지 다시 탐험한다. {experiment.whatToWatch}"
+                )
+            ),
         ]
     )
     return VideoDirector(
-        title="과학 해석 12초 필름",
-        concept=scientific_interpretation.explanation,
+        title=f"{mode_copy.title} 12초 필름",
+        concept=f"{mode_copy.hook} {scientific_interpretation.explanation}",
         visualStyle="프리미엄 아동 에디토리얼 일러스트와 연구노트 모션의 결합",
-        mixDirection="장면마다 설명이 짧게 꽂히고, 마지막에는 내일의 기록 미션이 남는다.",
+        mixDirection=mode_copy.reward,
         scenarioText=scenario_text,
         soraPrompt=sora_prompt,
         targetDurationSeconds=12,

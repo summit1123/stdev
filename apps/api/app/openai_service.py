@@ -13,7 +13,7 @@ from PIL import Image
 
 from app.config import Settings
 from app.fallbacks import fallback_parse_from_text, fallback_result
-from app.models import DiaryParseOutput, EntryResult, GeneratedEntryResult
+from app.models import DiaryParseOutput, EntryResult, GameModeCard, GeneratedEntryResult
 
 
 PARSER_SYSTEM_PROMPT = """
@@ -49,6 +49,48 @@ TTS_INSTRUCTIONS = """
 한 문장마다 짧게 숨을 쉬고, 너무 밝게 튀지 않게 안정적으로 말한다.
 어린이에게 설명하듯 쉽고 또렷하지만 유치하지는 않게 읽는다.
 """
+
+MODE_CARD_COPY = {
+    "observe": {
+        "title": "탐정 모드",
+        "hook": '일기 속 어떤 장면에서든 "왜 그랬을까?"를 질문 삼아 과학 원리를 추리하는 모드',
+        "mission": '일기의 행동, 감각, 변화 중 하나를 골라 원인을 추적하는 단서에서 추리로 이어지는 흐름으로 구성합니다.',
+        "reward": "시나리오와 이미지, 영상도 단서와 원인 추리 흐름으로 이어집니다.",
+        "scene_title": "탐정 모드 장면 설계",
+        "scene_caption": "행동, 감각, 변화 단서를 따라 원인을 추리하는 장면으로 다시 본다.",
+        "scene_prompt_hint": "Detective-style scientific reading with visible clues, traces, timing differences, body direction, and cause hints.",
+        "video_title": "탐정 모드 과학 추리 영상",
+        "video_concept": "단서를 모아 원인을 좁혀 가는 과학 추리 영상",
+        "video_mix": "처음에는 단서를 넓게 모으고, 중간에는 원인을 좁히고, 마지막에는 가장 그럴듯한 설명으로 닫는다.",
+        "video_prompt_hint": "Detective reasoning, visible evidence, clue comparison, and cause tracing.",
+    },
+    "experiment": {
+        "title": "발명가 모드",
+        "hook": '일기 속 어떤 장면에서든 숨어있는 과학 원리를 꺼내 새로운 아이디어로 연결하는 모드',
+        "mission": '일기의 사물, 행동, 현상 중 하나를 골라 원리를 설명한 뒤 "이걸 응용하면?"으로 이어지는 흐름으로 구성합니다.',
+        "reward": "시나리오와 이미지, 영상도 원리 설명 뒤 응용 아이디어로 확장합니다.",
+        "scene_title": "발명가 모드 장면 설계",
+        "scene_caption": "장면 속 원리를 꺼내 응용 아이디어가 떠오르게 다시 구성한다.",
+        "scene_prompt_hint": "Inventor-style scientific framing with mechanism focus, usable structure, and practical idea sparks.",
+        "video_title": "발명가 모드 원리 응용 영상",
+        "video_concept": "숨어있는 원리를 꺼내 응용 아이디어로 이어지는 과학 영상",
+        "video_mix": "앞에서는 원리를 분해해 보여 주고, 뒤에서는 응용 아이디어와 작은 프로토타입 상상으로 밀어 준다.",
+        "video_prompt_hint": "Inventor mindset, reveal mechanism first, then practical application and idea extension.",
+    },
+    "imagine": {
+        "title": "탐험가 모드",
+        "hook": '일기 속 어떤 순간이든 처음 발견한 것처럼 낯설게 바라보며 과학을 찾아내는 모드',
+        "mission": '일기에서 당연하게 지나친 장면을 골라 "이게 왜 당연한 걸까?"라는 탐험 질문으로 바꿔 구성합니다.',
+        "reward": "시나리오와 이미지, 영상도 낯설게 다시 보는 탐험 흐름으로 이어집니다.",
+        "scene_title": "탐험가 모드 장면 설계",
+        "scene_caption": "익숙한 장면을 처음 발견한 것처럼 낯설게 다시 보며 숨은 규칙을 찾는다.",
+        "scene_prompt_hint": "Explorer-style scientific framing that makes the familiar feel newly discovered, curious, and slightly surprising.",
+        "video_title": "탐험가 모드 발견 영상",
+        "video_concept": "익숙한 장면을 낯설게 다시 보며 숨은 과학을 발견하는 영상",
+        "video_mix": "처음엔 익숙한 장면을 멈춰 세우고, 중간에는 숨은 규칙을 드러내고, 마지막에는 새 탐험 질문으로 이어 준다.",
+        "video_prompt_hint": "Explorer mindset, make the ordinary feel newly discovered, highlight hidden rules and fresh questions.",
+    },
+}
 
 
 class OpenAIService:
@@ -179,6 +221,7 @@ class OpenAIService:
 
         try:
             science_focus = self._infer_science_focus(text)
+            mode_copy = MODE_CARD_COPY.get(preferred_mode_id, MODE_CARD_COPY["observe"])
             response = self.client.responses.parse(
                 model=self.settings.polish_model,
                 input=[
@@ -195,6 +238,9 @@ class OpenAIService:
                                     "다음 일기를 과학 문화 콘텐츠 세트로 바꿔 주세요.\n"
                                     f"일기: {text}\n"
                                     f"선호 모드: {preferred_mode_id}\n"
+                                    f"선호 모드 이름: {mode_copy['title']}\n"
+                                    f"모드 설명: {mode_copy['hook']}\n"
+                                    f"모드 구성 방식: {mode_copy['mission']}\n"
                                     f"우선 과학 초점: {science_focus}\n"
                                     "출력 규칙:\n"
                                     "1. summary는 감상 대신 관찰된 현상과 핵심 질문의 출발점을 한두 문장으로 압축한다.\n"
@@ -206,12 +252,16 @@ class OpenAIService:
                                     "6. scienceGame은 규칙이 보이는 미니 게임이어야 하며, 감정 공감 놀이가 아니라 단서 찾기/비교/측정 중심이어야 한다. 썰매면 마찰/속도, 비면 증발/구름/빗방울, 곤충이면 서식/움직임처럼 사건에 맞는 과학 원리를 써라.\n"
                                     "7. scienceQuiz는 보기 3개 이상, 정답 인덱스, 짧은 해설을 포함한 한 문제 퀴즈다.\n"
                                     "8. sceneCards는 현상 요약, 질문 씨앗, 미니 실험, AI 해설 순서로 작성한다.\n"
-                                    "9. gameModes는 observe, experiment, imagine 세 가지를 모두 포함하되, imagine은 창작 감상이 아니라 간단한 모형화 또는 규칙 시뮬레이션 톤으로 쓴다.\n"
+                                    "9. gameModes는 observe, experiment, imagine 세 가지를 모두 포함하되, 제목과 설명은 각각 탐정 모드, 발명가 모드, 탐험가 모드로 쓴다.\n"
                                     "10. videoDirector는 로컬 이미지 기반 24초 설명 영상 spec이다.\n"
                                     "11. videoDirector.scenarioText는 8개 장면을 0-3초, 3-6초, 6-9초, 9-12초, 12-15초, 15-18초, 18-21초, 21-24초 형식의 한국어 시나리오로 쓰고, 흐름은 장면 관찰 -> 변수 찾기 -> 가설 세우기 -> 첫 기록 -> 재시험 -> 조건 비교 -> 결과 비교 -> 오늘의 결론이어야 한다.\n"
                                     "12. videoDirector.shots[*].visualPrompt는 그림일기 스타일의 실제 이미지 생성에 바로 쓸 만큼 구체적이어야 하며, 각 장면의 과학 단계와 핵심 현상(예: 경사, 속도선, 물방울, 그림자 길이, 날개 움직임)이 보이게 써야 한다.\n"
                                     "13. narration.script는 24초 안에 읽힐 만큼 짧고 분명한 한국어 4~5문장이다.\n"
-                                    "14. media.videoModel에는 storyboard-mix를 넣고, URL 필드는 비워 둔다."
+                                    "14. media.videoModel에는 storyboard-mix를 넣고, URL 필드는 비워 둔다.\n"
+                                    '15. 선호 모드가 observe면 탐정 모드다. 행동, 감각, 변화 중 하나를 단서로 잡고 "왜 그랬을까?"를 추리하는 톤이 sceneVisual, scienceGame, videoDirector 전체에 드러나야 한다.\n'
+                                    '16. 선호 모드가 experiment면 발명가 모드다. 숨어있는 원리를 설명한 뒤 "이걸 응용하면?"으로 이어지는 톤이 sceneVisual, scienceGame, videoDirector 전체에 드러나야 한다.\n'
+                                    '17. 선호 모드가 imagine이면 탐험가 모드다. 당연한 장면을 낯설게 다시 보며 "이게 왜 당연한 걸까?"를 묻는 톤이 sceneVisual, scienceGame, videoDirector 전체에 드러나야 한다.\n'
+                                    "18. preferredModeId가 유효하면 recommendedModeId도 같은 값으로 유지한다."
                                 ),
                             }
                         ],
@@ -233,16 +283,19 @@ class OpenAIService:
             if len(generated.scienceQuiz.options) < 3:
                 raise RuntimeError("Planner returned an incomplete science quiz.")
 
-            scene_visual = self._normalize_scene_visual(generated)
+            effective_mode_id = preferred_mode_id if preferred_mode_id in MODE_CARD_COPY else generated.recommendedModeId
+            scene_visual = self._normalize_scene_visual(generated, effective_mode_id)
             scientific_interpretation = self._normalize_scientific_interpretation(
                 generated.scientificInterpretation,
                 generated.experimentCard.independentVariable,
                 generated.experimentCard.dependentVariable,
             )
+            science_game = self._normalize_science_game(generated.scienceGame, effective_mode_id)
             video_director = self._normalize_video_director(
                 generated.videoDirector,
                 generated.experimentCard.independentVariable,
                 generated.experimentCard.dependentVariable,
+                effective_mode_id,
             )
             narration = self._normalize_narration(
                 generated.narration,
@@ -261,10 +314,10 @@ class OpenAIService:
                 experimentCard=generated.experimentCard,
                 scientificInterpretation=scientific_interpretation,
                 sceneVisual=scene_visual,
-                scienceGame=generated.scienceGame,
+                scienceGame=science_game,
                 scienceQuiz=generated.scienceQuiz,
-                gameModes=generated.gameModes,
-                recommendedModeId=generated.recommendedModeId,
+                gameModes=self._normalize_game_modes(),
+                recommendedModeId=effective_mode_id,
                 videoDirector=video_director,
                 creativeExpansion=generated.creativeExpansion,
                 guardianNote=generated.guardianNote,
@@ -408,11 +461,94 @@ class OpenAIService:
             }
         )
 
-    def _normalize_scene_visual(self, generated: GeneratedEntryResult):
+    def _normalize_game_modes(self) -> list[GameModeCard]:
+        return [
+            GameModeCard(id=mode_id, title=copy["title"], hook=copy["hook"], mission=copy["mission"], reward=copy["reward"])
+            for mode_id, copy in MODE_CARD_COPY.items()
+        ]
+
+    def _default_stage_descriptions(self, mode_id: str, independent_variable: str, dependent_variable: str) -> list[str]:
+        if mode_id == "experiment":
+            return [
+                "장면 속에 숨어 있던 원리를 꺼내 발명의 재료를 모은다.",
+                f"{independent_variable}와 {dependent_variable}가 어떻게 이어지는지 구조를 나눠 본다.",
+                "이 원리를 바꾸면 어떤 새로운 결과가 나올지 아이디어를 세운다.",
+                "첫 번째 응용 기록을 남긴다.",
+                "같은 원리로 다른 작은 방법도 다시 시험한다.",
+                f"{independent_variable}를 다르게 적용한 두 아이디어를 나란히 둔다.",
+                f"{dependent_variable}가 어떻게 달라졌는지 결과를 비교한다.",
+                "오늘 찾은 원리를 어디에 더 응용할지 한 줄 아이디어로 마무리한다.",
+            ]
+        if mode_id == "imagine":
+            return [
+                "익숙했던 장면을 처음 보는 것처럼 낯설게 천천히 바라본다.",
+                f"{independent_variable}와 {dependent_variable}가 사실 왜 늘 함께 움직였는지 질문을 붙인다.",
+                "당연해 보였던 규칙에 새로운 가설을 세운다.",
+                "처음 발견한 단서를 기록한다.",
+                "같은 장면을 다시 보며 숨은 규칙이 계속 보이는지 확인한다.",
+                f"{independent_variable}가 달라지면 장면이 어떻게 낯설게 달라지는지 비교한다.",
+                f"{dependent_variable} 차이를 통해 장면의 숨은 질서를 읽어 낸다.",
+                "마지막엔 다음에 더 낯설게 보고 싶은 탐험 질문을 남긴다.",
+            ]
+        return [
+            "행동, 감각, 변화 중 가장 수상한 단서를 먼저 모은다.",
+            f"{independent_variable}와 {dependent_variable}가 어떻게 연결되는지 단서를 분리해 본다.",
+            "가장 그럴듯한 원인 가설을 세운다.",
+            "첫 번째 단서 기록을 남긴다.",
+            "같은 장면을 다시 보며 놓친 단서가 없는지 확인한다.",
+            f"{independent_variable}가 다른 두 조건을 단서처럼 나란히 놓고 비교한다.",
+            f"{dependent_variable} 차이를 보며 원인 후보를 더 좁힌다.",
+            "오늘 가장 그럴듯했던 설명과 내일 다시 볼 단서를 정리한다.",
+        ]
+
+    def _extract_stage_descriptions(
+        self,
+        scenario_text: str,
+        shots,
+        mode_id: str,
+        independent_variable: str,
+        dependent_variable: str,
+    ) -> list[str]:
+        descriptions: list[str] = []
+        for raw_line in scenario_text.splitlines():
+            normalized = " ".join(raw_line.split())
+            if not normalized:
+                continue
+            descriptions.append(normalized.split(":", 1)[1].strip() if ":" in normalized else normalized)
+
+        for shot in shots:
+            subtitle = " ".join(shot.subtitle.split())
+            if subtitle and subtitle not in descriptions:
+                descriptions.append(subtitle)
+
+        defaults = self._default_stage_descriptions(mode_id, independent_variable, dependent_variable)
+        while len(descriptions) < 8:
+            descriptions.append(defaults[len(descriptions)])
+        return descriptions[:8]
+
+    def _normalize_scene_visual(self, generated: GeneratedEntryResult, mode_id: str):
+        mode_copy = MODE_CARD_COPY.get(mode_id, MODE_CARD_COPY["observe"])
         prompt = generated.sceneVisual.prompt.strip()
+        prompt = f"{prompt}. {mode_copy['scene_prompt_hint']}".strip(". ")
         if "no text" not in prompt.lower():
             prompt = f"{prompt}. No text, no watermark."
-        return generated.sceneVisual.model_copy(update={"prompt": prompt})
+        title = generated.sceneVisual.title.strip() or mode_copy["scene_title"]
+        if mode_copy["title"] not in title:
+            title = f"{mode_copy['title']} {title}"
+        return generated.sceneVisual.model_copy(
+            update={
+                "title": title,
+                "caption": generated.sceneVisual.caption.strip() or mode_copy["scene_caption"],
+                "prompt": prompt,
+            }
+        )
+
+    def _normalize_science_game(self, science_game, mode_id: str):
+        mode_copy = MODE_CARD_COPY.get(mode_id, MODE_CARD_COPY["observe"])
+        title = science_game.title.strip()
+        if mode_copy["title"] not in title:
+            title = f"{mode_copy['title']} {title}".strip()
+        return science_game.model_copy(update={"title": title})
 
     def _normalize_scientific_interpretation(self, scientific_interpretation, independent_variable: str, dependent_variable: str):
         concept = scientific_interpretation.concept.strip()
@@ -436,7 +572,8 @@ class OpenAIService:
             }
         )
 
-    def _normalize_video_director(self, video_director, independent_variable: str, dependent_variable: str):
+    def _normalize_video_director(self, video_director, independent_variable: str, dependent_variable: str, mode_id: str):
+        mode_copy = MODE_CARD_COPY.get(mode_id, MODE_CARD_COPY["observe"])
         merged_shots = []
         stage_durations = [4, 4, 3, 3, 3, 3, 2, 2]
         stage_titles = [
@@ -449,6 +586,13 @@ class OpenAIService:
             "결과 비교",
             "오늘의 결론",
         ]
+        stage_descriptions = self._extract_stage_descriptions(
+            video_director.scenarioText,
+            video_director.shots,
+            mode_id,
+            independent_variable,
+            dependent_variable,
+        )
         stage_hints = [
             "실제 장면과 인물, 공간, 눈에 보이는 행동을 보여 준다",
             f"독립변수 {independent_variable}와 종속변수 {dependent_variable}가 무엇인지 드러나게 보여 준다",
@@ -466,12 +610,18 @@ class OpenAIService:
         scenario_lines = []
         normalized_shots = []
         for index, shot in enumerate(merged_shots[:4]):
-            subtitle = stage_titles[index]
+            subtitle = stage_descriptions[index]
             prompt = " ".join(shot.visualPrompt.split())
             if independent_variable and dependent_variable and index == 1:
-                prompt = f"{prompt}. 두 변수의 차이가 화면에서 구분되게 표현. No text, no watermark, no letters, no numbers, no labels."
+                prompt = (
+                    f"{prompt}. {mode_copy['video_prompt_hint']} 두 변수의 차이가 화면에서 구분되게 표현. "
+                    "No text, no watermark, no letters, no numbers, no labels."
+                )
             else:
-                prompt = f"{prompt}. {stage_hints[index]}. No text, no watermark, no letters, no numbers, no labels."
+                prompt = (
+                    f"{prompt}. {mode_copy['video_prompt_hint']} {stage_hints[index]}. "
+                    "No text, no watermark, no letters, no numbers, no labels."
+                )
             normalized_shots.append(
                 shot.model_copy(
                     update={
@@ -495,14 +645,15 @@ class OpenAIService:
             for continuation_index, hint in enumerate(continuation_hints, start=4):
                 prompt = (
                     f"{seed_prompt} Direct continuation from the previous frame, same child, same place, "
-                    f"same objects, same drawing style. {stage_hints[continuation_index]}. {hint}. "
+                    f"same objects, same drawing style. {mode_copy['video_prompt_hint']} "
+                    f"{stage_hints[continuation_index]}. {hint}. "
                     "No text, no watermark, no letters, no numbers, no labels, no notebook writing, no chart."
                 )
                 normalized_shots.append(
                     template_shot.model_copy(
                         update={
                             "sceneTitle": stage_titles[continuation_index],
-                            "subtitle": stage_titles[continuation_index],
+                            "subtitle": stage_descriptions[continuation_index],
                             "visualPrompt": prompt,
                             "durationSeconds": stage_durations[continuation_index],
                         }
@@ -513,17 +664,20 @@ class OpenAIService:
         for index, shot in enumerate(normalized_shots):
             start = elapsed
             elapsed += shot.durationSeconds
-            scenario_lines.append(f"{index + 1}장면 {start}-{elapsed}초: {shot.subtitle}")
+            scenario_lines.append(f"{index + 1}장면 {start}-{elapsed}초: {stage_descriptions[index]}")
 
         scenario_text = "\n".join(scenario_lines)
+        title = video_director.title.strip() or mode_copy["video_title"]
+        if mode_copy["title"] not in title:
+            title = f"{mode_copy['title']} {title}".strip()
         return video_director.model_copy(
             update={
-                "title": video_director.title.strip() or "24초 탐구 영상",
-                "concept": video_director.concept.strip() or "일기 장면을 24초 과학 해석 영상으로 이어 붙인다.",
+                "title": title,
+                "concept": video_director.concept.strip() or mode_copy["video_concept"],
                 "visualStyle": video_director.visualStyle.strip(),
                 "mixDirection": (
                     video_director.mixDirection.strip()
-                    or "처음 두 장면은 넓고 길게 잡아 몰입을 만들고, 뒤 장면은 비교와 결론으로 리듬을 조인다."
+                    or mode_copy["video_mix"]
                 ),
                 "scenarioText": scenario_text,
                 "soraPrompt": video_director.soraPrompt.strip(),
