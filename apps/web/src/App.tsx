@@ -445,13 +445,50 @@ function App() {
     () => withAssetVersion(resolveMediaUrl(result?.media.soraVideoUrl), assetVersion),
     [assetVersion, result?.media.soraVideoUrl],
   )
-  const videoUrl = soraVideoUrl || localVideoUrl
   const thumbnailUrl = useMemo(
     () => withAssetVersion(resolveMediaUrl(result?.media.thumbnailUrl), assetVersion),
     [assetVersion, result?.media.thumbnailUrl],
   )
   const videoPreviewImage = thumbnailUrl || sceneVisualUrl
   const videoDurationLabel = `${result?.videoDirector.targetDurationSeconds ?? 24}초`
+  const videoPanels = useMemo(
+    () => [
+      {
+        id: 'storyboard-video',
+        kicker: '이미지 기반 설명 영상',
+        title: '장면 카드로 이어 만든 버전',
+        src: localVideoUrl,
+        poster: thumbnailUrl ?? undefined,
+        preview: videoPreviewImage,
+        copy:
+          result?.videoDirector.concept ??
+          `일기 장면을 질문과 실험으로 바꾸는 ${videoDurationLabel} 설명 영상입니다.`,
+      },
+      {
+        id: 'sora-video',
+        kicker: 'Sora 영상',
+        title: result?.media.videoModel ?? 'sora-2-pro',
+        src: soraVideoUrl,
+        poster: sceneVisualUrl ?? thumbnailUrl ?? undefined,
+        preview: sceneVisualUrl || currentPoster,
+        copy:
+          result?.videoDirector.visualStyle ??
+          '같은 시나리오를 더 연속적인 장면 흐름으로 다시 렌더한 버전입니다.',
+      },
+    ],
+    [
+      currentPoster,
+      localVideoUrl,
+      result?.media.videoModel,
+      result?.videoDirector.concept,
+      result?.videoDirector.visualStyle,
+      sceneVisualUrl,
+      soraVideoUrl,
+      thumbnailUrl,
+      videoDurationLabel,
+      videoPreviewImage,
+    ],
+  )
   const diaryExcerpt = useMemo(
     () => getDiaryExcerpt(transcript || entryStatus?.normalizedText || entryStatus?.rawText || ''),
     [entryStatus?.normalizedText, entryStatus?.rawText, transcript],
@@ -1173,24 +1210,35 @@ function App() {
                     ) : null}
                   </section>
 
-                  <section className="media-panel result-video-panel">
-                    <div className="panel-header">
-                      <span>과학 해석 영상</span>
-                      <strong>{result?.videoDirector.title ?? '24초 영상 준비 중'}</strong>
-                    </div>
-                    {videoUrl ? (
-                      <video className="spotlight-video" controls playsInline poster={thumbnailUrl ?? undefined} src={videoUrl} />
-                    ) : videoPreviewImage ? (
-                      <img className="spotlight-video" src={videoPreviewImage} alt="영상 준비 중 장면 미리보기" />
-                    ) : (
-                      <div className="media-empty">
-                        <p>생성된 영상이 여기에 나타납니다.</p>
+                  <div className="result-video-compare">
+                    <div className="section-head compact result-video-head">
+                      <div>
+                        <p className="section-kicker">Video</p>
+                        <h2>{result?.videoDirector.title ?? '과학 해석 영상'}</h2>
                       </div>
-                    )}
-                    <p className="panel-copy">
-                      {result?.videoDirector.concept ?? `일기 장면을 질문과 실험으로 바꾸는 ${videoDurationLabel} 설명 영상입니다.`}
-                    </p>
-                  </section>
+                      <span>{videoDurationLabel}</span>
+                    </div>
+                    <div className="result-video-grid">
+                      {videoPanels.map((panel) => (
+                        <section key={panel.id} className="media-panel result-video-panel">
+                          <div className="panel-header">
+                            <span>{panel.kicker}</span>
+                            <strong>{panel.title}</strong>
+                          </div>
+                          {panel.src ? (
+                            <video className="spotlight-video" controls playsInline poster={panel.poster} src={panel.src} />
+                          ) : panel.preview ? (
+                            <img className="spotlight-video" src={panel.preview} alt={`${panel.title} 미리보기`} />
+                          ) : (
+                            <div className="media-empty">
+                              <p>생성된 영상이 여기에 나타납니다.</p>
+                            </div>
+                          )}
+                          <p className="panel-copy">{panel.copy}</p>
+                        </section>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </section>
 
@@ -1499,16 +1547,28 @@ function App() {
                         <span>{result.media.videoModel ?? 'sora-2-pro'}</span>
                       </div>
                       <pre className="scenario-text">{result.videoDirector.scenarioText}</pre>
-                      {result.media.soraVideoUrl ? (
-                        <a
-                          className="inline-link"
-                          href={resolveMediaUrl(result.media.soraVideoUrl) ?? undefined}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          원본 Sora mp4 열기
-                        </a>
-                      ) : null}
+                      <div className="inline-link-row">
+                        {result.media.videoUrl ? (
+                          <a
+                            className="inline-link"
+                            href={resolveMediaUrl(result.media.videoUrl) ?? undefined}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            이미지 기반 mp4 열기
+                          </a>
+                        ) : null}
+                        {result.media.soraVideoUrl ? (
+                          <a
+                            className="inline-link"
+                            href={resolveMediaUrl(result.media.soraVideoUrl) ?? undefined}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Sora mp4 열기
+                          </a>
+                        ) : null}
+                      </div>
                     </section>
                   </div>
                 </>
