@@ -19,7 +19,7 @@ function inferHostedApiBase(): string | null {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? inferHostedApiBase() ?? 'http://localhost:8000'
 const BRAND_NAME = 'kwail'
-const BRAND_LOGO = '/branding/kwail-banana-logo.png'
+const BRAND_LOGO = '/branding/kwail-lemon-bulb-mark.png'
 
 type EntryStatus =
   | 'created'
@@ -193,16 +193,16 @@ const homeJourneySteps = [
 
 const homeModes = [
   {
-    title: '관찰 모드',
-    body: '속도, 그림자, 물방울, 소리처럼 장면에서 실제로 바뀌는 현상부터 찾습니다.',
+    title: '탐정 모드',
+    body: '일기 속 어떤 장면에서든 "왜 그랬을까?"를 질문 삼아 과학 원리를 추리합니다.',
   },
   {
-    title: '실험 모드',
-    body: '경사, 힘, 온도, 시간 중 하나를 바꾸고 결과가 어떻게 달라지는지 비교합니다.',
+    title: '발명가 모드',
+    body: '일기 속 어떤 장면에서든 숨어있는 과학 원리를 꺼내 새로운 아이디어로 연결합니다.',
   },
   {
-    title: '모형 모드',
-    body: '썰매, 비, 곤충, 식물 같은 장면을 원리 그림과 규칙 흐름으로 다시 설명합니다.',
+    title: '탐험가 모드',
+    body: '일기 속 어떤 순간이든 처음 발견한 것처럼 낯설게 바라보며 과학을 찾아냅니다.',
   },
 ]
 
@@ -272,24 +272,24 @@ const pipelineSteps = [
 const modeCopy: Record<ModeId, GameModeCard> = {
   observe: {
     id: 'observe',
-    title: '관찰 탐정 모드',
-    hook: '표정, 거리, 속도, 모양처럼 먼저 보이는 단서를 세는 모드',
-    mission: '장면에서 바로 확인할 수 있는 단서를 골라 기록 질문으로 바꿉니다.',
-    reward: '내일 다시 와서 같은 단서를 비교하는 관찰 미션이 열립니다.',
+    title: '탐정 모드',
+    hook: '일기 속 어떤 장면에서든 "왜 그랬을까?"를 질문 삼아 과학 원리를 추리하는 모드',
+    mission: '일기의 행동, 감각, 변화 중 하나를 골라 원인을 추적하는 단서에서 추리로 이어지는 흐름으로 구성합니다.',
+    reward: '시나리오와 이미지, 영상도 단서와 원인 추리 흐름으로 이어집니다.',
   },
   experiment: {
     id: 'experiment',
-    title: '실험 레인저 모드',
-    hook: '조건 하나를 바꿨을 때 결과가 어떻게 달라지는지 보는 모드',
-    mission: '변수 하나와 기록 방법 하나를 남겨 실험 카드로 정리합니다.',
-    reward: '다음 날 다시 와서 결과 차이를 적는 비교 미션이 열립니다.',
+    title: '발명가 모드',
+    hook: '일기 속 어떤 장면에서든 숨어있는 과학 원리를 꺼내 새로운 아이디어로 연결하는 모드',
+    mission: '일기의 사물, 행동, 현상 중 하나를 골라 원리를 설명한 뒤 "이걸 응용하면?"으로 이어지는 흐름으로 구성합니다.',
+    reward: '시나리오와 이미지, 영상도 원리 설명 뒤 응용 아이디어로 확장합니다.',
   },
   imagine: {
     id: 'imagine',
-    title: '모형 추리 모드',
-    hook: '장면을 규칙과 변수의 모형으로 바꿔 원인을 따지는 모드',
-    mission: '무엇이 결과를 바꾸는지 규칙, 변수, 예외를 중심으로 정리합니다.',
-    reward: '다른 조건에서도 같은 규칙이 맞는지 확인하는 추리 미션이 열립니다.',
+    title: '탐험가 모드',
+    hook: '일기 속 어떤 순간이든 처음 발견한 것처럼 낯설게 바라보며 과학을 찾아내는 모드',
+    mission: '일기에서 당연하게 지나친 장면을 골라 "이게 왜 당연한 걸까?"라는 탐험 질문으로 바꿔 구성합니다.',
+    reward: '시나리오와 이미지, 영상도 낯설게 다시 보는 탐험 흐름으로 이어집니다.',
   },
 }
 
@@ -460,7 +460,7 @@ function App() {
     }
     const generated = new Map(result.gameModes.map((mode) => [mode.id, mode]))
     return modeOrder
-      .map((id) => ({ ...modeCopy[id], ...generated.get(id) }))
+      .map((id) => ({ ...generated.get(id), ...modeCopy[id] }))
       .sort((a, b) => (a.id === result.recommendedModeId ? -1 : b.id === result.recommendedModeId ? 1 : 0))
   }, [result])
   async function refreshEntries() {
