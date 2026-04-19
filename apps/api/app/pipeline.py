@@ -75,7 +75,7 @@ class AnalysisPipeline:
             audio = self.ai.synthesize_speech(result.narration.script)
             if audio:
                 result.narration.audioUrl = self.store.save_audio(entry.id, audio)
-                result.narration.voice = self.ai.active_tts_voice_label
+                result.narration.voice = self.ai.last_tts_voice_label
                 self.store.save_result(entry.id, result)
 
             entry.status = EntryStatus.RENDERING_VIDEO

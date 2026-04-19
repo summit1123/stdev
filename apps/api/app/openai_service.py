@@ -178,6 +178,7 @@ class OpenAIService:
             if settings.openai_api_key
             else None
         )
+        self._last_tts_voice_label = self.active_tts_voice_label
 
     @property
     def is_enabled(self) -> bool:
@@ -195,6 +196,10 @@ class OpenAIService:
         if self.active_tts_provider == "elevenlabs":
             return self.settings.elevenlabs_voice_label
         return self.settings.default_voice
+
+    @property
+    def last_tts_voice_label(self) -> str:
+        return self._last_tts_voice_label
 
     def moderate_text(self, text: str) -> tuple[bool, list[str]]:
         if not self.client:
@@ -1084,8 +1089,15 @@ class OpenAIService:
             return None
         provider = self.active_tts_provider
         prepared_script = self._prepare_tts_script(script)
+        self._last_tts_voice_label = self.active_tts_voice_label
         if provider == "elevenlabs":
-            return self._synthesize_with_elevenlabs(prepared_script)
+            audio = self._synthesize_with_elevenlabs(prepared_script)
+            if audio:
+                self._last_tts_voice_label = self.settings.elevenlabs_voice_label
+                return audio
+            if not self.client:
+                return None
+            logger.warning("ElevenLabs TTS failed, falling back to OpenAI TTS.")
         if not self.client:
             return None
         try:
@@ -1095,8 +1107,10 @@ class OpenAIService:
                 input=prepared_script,
                 instructions=TTS_INSTRUCTIONS,
             )
+            self._last_tts_voice_label = self.settings.default_voice
             return response.read()
-        except Exception:
+        except Exception as exc:
+            logger.warning("OpenAI TTS failed: %s", exc)
             return None
 
     def _synthesize_with_elevenlabs(self, script: str) -> bytes | None:
@@ -1134,9 +1148,20 @@ class OpenAIService:
         try:
             with urlopen(request, timeout=45) as response:
                 return response.read()
-        except HTTPError:
+        except HTTPError as exc:
+            error_body = ""
+            try:
+                error_body = exc.read().decode("utf-8", errors="ignore").strip()
+            except Exception:
+                error_body = ""
+            logger.warning(
+                "ElevenLabs TTS HTTP error %s: %s",
+                exc.code,
+                error_body or exc.reason,
+            )
             return None
-        except Exception:
+        except Exception as exc:
+            logger.warning("ElevenLabs TTS failed: %s", exc)
             return None
 
     def _prepare_tts_script(self, script: str) -> str:

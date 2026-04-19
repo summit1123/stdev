@@ -55,6 +55,54 @@ def test_synthesize_speech_prefers_elevenlabs_when_key_exists(monkeypatch) -> No
     assert audio == b"fake-mp3"
     assert "voice-test" in captured["url"]
     assert captured["api_key"] == "test-key"
+    assert service.last_tts_voice_label == service.settings.elevenlabs_voice_label
+
+
+def test_synthesize_speech_falls_back_to_openai_when_elevenlabs_fails() -> None:
+    service = OpenAIService(
+        Settings(
+            openai_api_key="openai-key",
+            elevenlabs_api_key="test-key",
+            tts_provider="elevenlabs",
+            default_voice="alloy",
+        )
+    )
+
+    class FakeSpeechResponse:
+        def read(self) -> bytes:
+            return b"openai-mp3"
+
+    class FakeSpeechClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, str]] = []
+
+        def create(self, *, model, voice, input, instructions):
+            self.calls.append(
+                {
+                    "model": model,
+                    "voice": voice,
+                    "input": input,
+                    "instructions": instructions,
+                }
+            )
+            return FakeSpeechResponse()
+
+    class FakeAudioClient:
+        def __init__(self) -> None:
+            self.speech = FakeSpeechClient()
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.audio = FakeAudioClient()
+
+    service.client = FakeClient()
+    service._synthesize_with_elevenlabs = lambda script: None
+
+    audio = service.synthesize_speech("첫 문장입니다. 두 번째 문장입니다.")
+
+    assert audio == b"openai-mp3"
+    assert service.client.audio.speech.calls[0]["voice"] == "alloy"
+    assert service.last_tts_voice_label == "alloy"
 
 
 def test_answer_card_chat_falls_back_with_card_specific_guidance() -> None:
