@@ -51,8 +51,8 @@ class Settings(BaseSettings):
     sora_model: str = "sora-2-pro"
     default_voice: str = "marin"
     elevenlabs_model_id: str = "eleven_multilingual_v2"
-    elevenlabs_voice_id: str = "Xb7hH8MSUJpSbSDYk0k2"
-    elevenlabs_voice_label: str = "Alice"
+    elevenlabs_voice_id: str = "hpp4J3VqNfWAUOO0d1Us"
+    elevenlabs_voice_label: str = "Bella"
     elevenlabs_output_format: str = "mp3_44100_128"
     elevenlabs_language_code: str = "ko"
     elevenlabs_stability: float = 0.42

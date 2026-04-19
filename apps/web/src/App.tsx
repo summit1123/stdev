@@ -1348,6 +1348,22 @@ function App() {
                         <p>생성된 영상이 여기에 나타납니다.</p>
                       </div>
                     )}
+                    {result?.narration.audioUrl ? (
+                      <div className="result-audio-panel">
+                        <div className="result-audio-meta">
+                          <span>내레이션 듣기</span>
+                          <strong>
+                            {result.narration.voice ?? '음성'}
+                            {result.narration.durationSec ? ` · ${Math.round(result.narration.durationSec)}초` : ''}
+                          </strong>
+                        </div>
+                        <audio controls preload="none" src={result.narration.audioUrl} />
+                      </div>
+                    ) : (
+                      <div className="result-audio-empty">
+                        <p>이번 결과는 음성 없이 저장되었어요.</p>
+                      </div>
+                    )}
                   </section>
                 </div>
               </section>
