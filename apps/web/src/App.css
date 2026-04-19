@@ -1620,6 +1620,26 @@
   aspect-ratio: 16 / 9;
 }
 
+.result-video-actions {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.video-help-text {
+  margin: 0;
+  color: #5d5d5d;
+  line-height: 1.6;
+}
+
+.media-open-link {
+  width: 100%;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  text-decoration: none;
+}
+
 .result-audio-panel,
 .result-audio-empty {
   width: calc(100% - 32px);
@@ -2409,22 +2429,38 @@
 
   .home-hero-media,
   .home-hero-copy {
-    min-height: 68vh;
+    min-height: 56vh;
   }
 
   .home-hero-copy h1 {
-    max-width: 100%;
-    font-size: 2.2rem;
+    max-width: 10ch;
+    font-size: clamp(2.7rem, 10.8vw, 3.35rem);
+    line-height: 0.95;
   }
 
   .home-hero-copy {
-    padding: 24px;
+    padding: 22px;
+    gap: 16px;
+  }
+
+  .home-hero-media {
+    background-position: 64% center;
   }
 
   .home-hero-body {
-    max-width: 100%;
-    font-size: 1rem;
+    max-width: 30ch;
+    font-size: 0.98rem;
     white-space: normal;
+  }
+
+  .hero-nowrap {
+    display: inline;
+    white-space: normal;
+  }
+
+  .home-hero-actions .home-primary,
+  .home-hero-actions .home-secondary {
+    width: 100%;
   }
 
   .app-shell {
@@ -2474,8 +2510,25 @@
   .spotlight-video,
   .media-empty {
     width: calc(100% - 24px);
-    min-height: 240px;
+    min-height: 216px;
     margin: 12px;
+  }
+
+  .result-audio-panel,
+  .result-audio-empty,
+  .result-video-actions {
+    width: calc(100% - 24px);
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+
+  .result-video-actions {
+    padding: 0 0 12px;
+  }
+
+  .result-audio-panel,
+  .result-audio-empty {
+    margin-bottom: 12px;
   }
 
   .composer-action-bar {

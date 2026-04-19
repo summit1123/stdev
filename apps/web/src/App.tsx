@@ -467,6 +467,7 @@ function App() {
   const [cardChatHistory, setCardChatHistory] = useState<CardChatMessage[]>([])
   const [cardChatInput, setCardChatInput] = useState('')
   const [isCardChatLoading, setIsCardChatLoading] = useState(false)
+  const [videoLoadError, setVideoLoadError] = useState(false)
   const [message, setMessage] = useState('일기의 장면을 과학 질문, 게임, 영상으로 연결할 준비가 됐어요.')
   const [error, setError] = useState<string | null>(null)
   const [activeStudioPage, setActiveStudioPage] = useState<StudioPage>(getStudioPageFromHash)
@@ -562,6 +563,10 @@ function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [activeCardChat])
+
+  useEffect(() => {
+    setVideoLoadError(false)
+  }, [localVideoUrl])
 
   useEffect(() => {
     const signature = mediaSignature(result)
@@ -1340,7 +1345,18 @@ function App() {
                       <strong>{result?.videoDirector.title ?? '과학 해석 영상'}</strong>
                     </div>
                     {localVideoUrl ? (
-                      <video className="spotlight-video" controls playsInline poster={thumbnailUrl ?? undefined} src={localVideoUrl} />
+                      <video
+                        key={localVideoUrl}
+                        className="spotlight-video"
+                        controls
+                        playsInline
+                        preload="metadata"
+                        poster={thumbnailUrl ?? undefined}
+                        onError={() => setVideoLoadError(true)}
+                        onLoadedData={() => setVideoLoadError(false)}
+                      >
+                        <source src={localVideoUrl} type="video/mp4" />
+                      </video>
                     ) : videoPreviewImage ? (
                       <img className="spotlight-video" src={videoPreviewImage} alt="영상 준비 중 장면 미리보기" decoding="async" />
                     ) : (
@@ -1348,6 +1364,14 @@ function App() {
                         <p>생성된 영상이 여기에 나타납니다.</p>
                       </div>
                     )}
+                    {localVideoUrl ? (
+                      <div className="result-video-actions">
+                        {videoLoadError ? <p className="video-help-text">모바일 재생이 바로 안 되면 새 창에서 영상을 열어 보세요.</p> : null}
+                        <a className="secondary-action media-open-link" href={localVideoUrl} target="_blank" rel="noreferrer">
+                          새 창에서 영상 열기
+                        </a>
+                      </div>
+                    ) : null}
                     {result?.narration.audioUrl ? (
                       <div className="result-audio-panel">
                         <div className="result-audio-meta">
